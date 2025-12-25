@@ -1,0 +1,357 @@
+openapi: 3.1.0
+info:
+  title: Physical AI & Humanoid Robotics Textbook API
+  description: |
+    Backend API for the interactive textbook platform, providing RAG-powered chatbot functionality
+    with streaming responses and citation support.
+
+    **Key Features**:
+    - Streaming chat responses via Server-Sent Events (SSE)
+    - Hybrid search (vector + BM25) retrieval
+    - Citation tracking with clickable links to textbook content
+    - Text selection-based contextual Q&A
+
+    **Base URL**: `https://api.robotics-textbook.example.com` (production)
+    **Base URL**: `http://localhost:8000` (development)
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: support@robotics-textbook.example.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: https://api.robotics-textbook.example.com
+    description: Production server (Render deployment)
+  - url: http://localhost:8000
+    description: Local development server
+
+tags:
+  - name: chat
+    description: Chatbot conversation endpoints
+  - name: health
+    description: Service health and status
+
+paths:
+  /api/chat:
+    post:
+      tags:
+        - chat
+      summary: Submit a chat message and receive streaming response
+      description: |
+        Sends a user question to the RAG-powered chatbot and receives a streaming response
+        via Server-Sent Events (SSE). The response includes:
+        - Streaming tokens (LLM output)
+        - Citations to relevant textbook chunks
+        - Completion signal with conversation/message IDs
+
+        **Flow**:
+        1. Client sends POST request with question
+        2. Server performs hybrid search (vector + BM25)
+        3. Server reranks top results
+        4. Server streams LLM response with citations
+        5. Server returns conversation_id for follow-up questions
+
+        **SSE Events**:
+        - `token`: Individual LLM output tokens
+        - `citation`: Reference to textbook chunk
+        - `done`: Completion signal with IDs
+      operationId: chatStream
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+            examples:
+              simpleQuestion:
+                summary: Simple question without context
+                value:
+                  session_id: "550e8400-e29b-41d4-a716-446655440000"
+                  message: "How do I calculate inverse kinematics for a 6-DOF robot arm?"
+                  selected_text: null
+                  conversation_id: null
+              followUpQuestion:
+                summary: Follow-up question in existing conversation
+                value:
+                  session_id: "550e8400-e29b-41d4-a716-446655440000"
+                  message: "Can you show me an example with Python code?"
+                  selected_text: null
+                  conversation_id: "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+              contextualQuestion:
+                summary: Question with selected text context (P3 feature)
+                value:
+                  session_id: "550e8400-e29b-41d4-a716-446655440000"
+                  message: "Can you explain this equation in simpler terms?"
+                  selected_text: "The DH parameter matrix is defined as: T = Rot(z, θ) * Trans(z, d) * Trans(x, a) * Rot(x, α)"
+                  conversation_id: "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+      responses:
+        '200':
+          description: Streaming response (Server-Sent Events)
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  Server-Sent Events stream with the following event types:
+
+                  **Event: token**
+                  data: {"token": "string"}
+
+                  **Event: citation**
+                  data: {"chunk_id": "uuid", "chapter": "string", "section": "string", "url": "string"}
+
+                  **Event: done**
+                  data: {"conversation_id": "uuid", "message_id": "uuid"}
+              examples:
+                streamingResponse:
+                  summary: Example SSE stream
+                  value: |
+                    event: token
+                    data: {"token": "Inverse"}
+
+                    event: token
+                    data: {"token": " kinematics"}
+
+                    event: citation
+                    data: {"chunk_id": "550e8400-e29b-41d4-a716-446655440000", "chapter": "Robot Kinematics", "section": "2.3 Inverse Kinematics", "url": "/chapters/02-kinematics#inverse-kinematics"}
+
+                    event: token
+                    data: {"token": " is"}
+
+                    event: done
+                    data: {"conversation_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7", "message_id": "a1b2c3d4-e5f6-47g8-h9i0-j1k2l3m4n5o6"}
+        '400':
+          description: Bad request (invalid input)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidMessage:
+                  summary: Message exceeds character limit
+                  value:
+                    error: "ValidationError"
+                    message: "Message exceeds maximum length of 2000 characters"
+                    details:
+                      field: "message"
+                      constraint: "max_length"
+                missingSessionId:
+                  summary: Missing required session_id
+                  value:
+                    error: "ValidationError"
+                    message: "session_id is required"
+                    details:
+                      field: "session_id"
+                      constraint: "required"
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "RateLimitExceeded"
+                message: "Too many requests. Please wait 60 seconds before retrying."
+                details:
+                  retry_after: 60
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "InternalServerError"
+                message: "An unexpected error occurred. Please try again later."
+                details:
+                  request_id: "req_abc123xyz"
+
+  /api/health:
+    get:
+      tags:
+        - health
+      summary: Health check endpoint
+      description: |
+        Returns the health status of the API and its dependencies:
+        - Database (Neon Postgres)
+        - Vector database (Qdrant)
+        - OpenAI API connectivity
+
+        Used by monitoring systems and deployment health checks.
+      operationId: getHealth
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: "healthy"
+                services:
+                  database: "ok"
+                  vector_db: "ok"
+                  openai: "ok"
+                timestamp: "2025-12-26T14:30:00Z"
+        '503':
+          description: Service is unhealthy (one or more dependencies down)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: "unhealthy"
+                services:
+                  database: "ok"
+                  vector_db: "error"
+                  openai: "ok"
+                timestamp: "2025-12-26T14:30:00Z"
+
+components:
+  schemas:
+    ChatRequest:
+      type: object
+      required:
+        - session_id
+        - message
+      properties:
+        session_id:
+          type: string
+          format: uuid
+          description: Browser session identifier (generated client-side)
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        message:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: User's question or message
+          example: "How do I calculate inverse kinematics for a 6-DOF robot arm?"
+        selected_text:
+          type: string
+          nullable: true
+          maxLength: 5000
+          description: Text selected by user for contextual Q&A (P3 feature)
+          example: null
+        conversation_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Existing conversation ID for follow-up questions (null for new conversation)
+          example: null
+
+    TokenEvent:
+      type: object
+      properties:
+        token:
+          type: string
+          description: Individual LLM output token
+          example: "kinematics"
+
+    CitationEvent:
+      type: object
+      required:
+        - chunk_id
+        - chapter
+        - section
+        - url
+      properties:
+        chunk_id:
+          type: string
+          format: uuid
+          description: UUID of the referenced content chunk
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        chapter:
+          type: string
+          description: Chapter title
+          example: "Robot Kinematics"
+        section:
+          type: string
+          description: Section heading
+          example: "2.3 Inverse Kinematics"
+        url:
+          type: string
+          format: uri
+          description: Docusaurus URL path to the content
+          example: "/chapters/02-kinematics#inverse-kinematics"
+
+    DoneEvent:
+      type: object
+      required:
+        - conversation_id
+        - message_id
+      properties:
+        conversation_id:
+          type: string
+          format: uuid
+          description: Conversation ID (for follow-up questions)
+          example: "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+        message_id:
+          type: string
+          format: uuid
+          description: Message ID of the assistant's response
+          example: "a1b2c3d4-e5f6-47g8-h9i0-j1k2l3m4n5o6"
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          description: Error type/code
+          example: "ValidationError"
+        message:
+          type: string
+          description: Human-readable error message
+          example: "Message exceeds maximum length of 2000 characters"
+        details:
+          type: object
+          description: Additional error context
+          additionalProperties: true
+          example:
+            field: "message"
+            constraint: "max_length"
+
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - services
+      properties:
+        status:
+          type: string
+          enum: [healthy, unhealthy]
+          description: Overall health status
+          example: "healthy"
+        services:
+          type: object
+          description: Status of individual service dependencies
+          properties:
+            database:
+              type: string
+              enum: [ok, error]
+              description: Neon Postgres connection status
+            vector_db:
+              type: string
+              enum: [ok, error]
+              description: Qdrant connection status
+            openai:
+              type: string
+              enum: [ok, error]
+              description: OpenAI API connectivity
+          required:
+            - database
+            - vector_db
+            - openai
+        timestamp:
+          type: string
+          format: date-time
+          description: Timestamp of health check
+          example: "2025-12-26T14:30:00Z"
+
+  securitySchemes: {}
+  # Note: No authentication required for this hackathon/demo project
+  # Production deployment would add API key authentication
