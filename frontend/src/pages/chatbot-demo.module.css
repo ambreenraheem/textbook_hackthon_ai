@@ -1,0 +1,363 @@
+/**
+ * Styles for Chatbot Demo Page
+ */
+
+.demoPage {
+  min-height: 100vh;
+}
+
+/* Hero Section */
+.hero {
+  background: linear-gradient(135deg, var(--ifm-color-primary) 0%, var(--ifm-color-primary-dark) 100%);
+  color: white;
+  padding: 4rem 2rem;
+  text-align: center;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.title {
+  font-size: 3rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+  line-height: 1.2;
+}
+
+.subtitle {
+  font-size: 1.25rem;
+  margin-bottom: 2rem;
+  opacity: 0.95;
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.notice {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.2);
+  padding: 1rem 2rem;
+  border-radius: 12px;
+  font-size: 1rem;
+  backdrop-filter: blur(10px);
+  animation: pulse 2s infinite;
+}
+
+.noticeIcon {
+  font-size: 1.5rem;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+/* Features Section */
+.features {
+  padding: 4rem 2rem;
+  background-color: var(--ifm-background-color);
+}
+
+.sectionTitle {
+  font-size: 2.5rem;
+  font-weight: 600;
+  text-align: center;
+  margin-bottom: 3rem;
+  color: var(--ifm-font-color-base);
+}
+
+.featureGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 2rem;
+  margin-top: 2rem;
+}
+
+.featureCard {
+  padding: 2rem;
+  background: var(--ifm-background-surface-color);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 12px;
+  transition: all 0.3s ease;
+}
+
+.featureCard:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+  border-color: var(--ifm-color-primary);
+}
+
+[data-theme='dark'] .featureCard {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.featureIcon {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+}
+
+.featureCard h3 {
+  font-size: 1.5rem;
+  margin-bottom: 0.75rem;
+  color: var(--ifm-font-color-base);
+}
+
+.featureCard p {
+  color: var(--ifm-font-color-secondary);
+  line-height: 1.6;
+}
+
+/* Try It Out Section */
+.tryItOut {
+  padding: 4rem 2rem;
+  background: linear-gradient(135deg, rgba(46, 133, 85, 0.05) 0%, rgba(46, 133, 85, 0.1) 100%);
+}
+
+.exampleQuestions {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.exampleIntro {
+  text-align: center;
+  font-size: 1.125rem;
+  margin-bottom: 2rem;
+  color: var(--ifm-font-color-base);
+}
+
+.questionList {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.questionItem {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.5rem;
+  background: var(--ifm-background-color);
+  border: 2px solid rgba(46, 133, 85, 0.2);
+  border-radius: 12px;
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.questionItem:hover {
+  border-color: var(--ifm-color-primary);
+  background: rgba(46, 133, 85, 0.05);
+  transform: translateX(8px);
+}
+
+.questionIcon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.questionText {
+  font-size: 1rem;
+  color: var(--ifm-font-color-base);
+}
+
+/* Technical Section */
+.technical {
+  padding: 4rem 2rem;
+  background-color: var(--ifm-background-color);
+}
+
+.techGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 2rem;
+}
+
+.techCard {
+  padding: 1.5rem;
+  background: var(--ifm-background-surface-color);
+  border-left: 4px solid var(--ifm-color-primary);
+  border-radius: 8px;
+}
+
+.techCard h4 {
+  font-size: 1.25rem;
+  margin-bottom: 1rem;
+  color: var(--ifm-font-color-base);
+}
+
+.techCard ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.techCard li {
+  padding: 0.5rem 0;
+  color: var(--ifm-font-color-secondary);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.techCard li::before {
+  content: '✓';
+  color: var(--ifm-color-primary);
+  font-weight: bold;
+}
+
+.techCard kbd {
+  background: rgba(0, 0, 0, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.85em;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+}
+
+[data-theme='dark'] .techCard kbd {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* Developer Section */
+.developer {
+  padding: 4rem 2rem;
+  background: linear-gradient(135deg, rgba(46, 133, 85, 0.05) 0%, rgba(46, 133, 85, 0.1) 100%);
+}
+
+.devInfo {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 2rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.codeBlock {
+  background: var(--ifm-background-color);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 12px;
+  padding: 1.5rem;
+}
+
+[data-theme='dark'] .codeBlock {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.codeBlock h4 {
+  margin-bottom: 1rem;
+  color: var(--ifm-font-color-base);
+}
+
+.codeBlock pre {
+  margin: 0;
+  background: rgba(0, 0, 0, 0.05);
+  padding: 1rem;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+
+[data-theme='dark'] .codeBlock pre {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.codeBlock code {
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: var(--ifm-font-color-base);
+}
+
+.links {
+  background: var(--ifm-background-color);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 12px;
+  padding: 1.5rem;
+}
+
+[data-theme='dark'] .links {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.links h4 {
+  margin-bottom: 1rem;
+  color: var(--ifm-font-color-base);
+}
+
+.links ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.links li {
+  margin-bottom: 0.75rem;
+}
+
+.links a {
+  color: var(--ifm-color-primary);
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.2s ease;
+}
+
+.links a:hover {
+  color: var(--ifm-color-primary-dark);
+  transform: translateX(4px);
+}
+
+.links a::before {
+  content: '→';
+  font-weight: bold;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .title {
+    font-size: 2rem;
+  }
+
+  .subtitle {
+    font-size: 1rem;
+  }
+
+  .sectionTitle {
+    font-size: 2rem;
+  }
+
+  .featureGrid,
+  .techGrid,
+  .devInfo {
+    grid-template-columns: 1fr;
+  }
+
+  .hero {
+    padding: 3rem 1rem;
+  }
+
+  .features,
+  .tryItOut,
+  .technical,
+  .developer {
+    padding: 3rem 1rem;
+  }
+}
+
+/* Animations */
+@media (prefers-reduced-motion: reduce) {
+  .notice,
+  .featureCard,
+  .questionItem {
+    animation: none;
+    transition: none;
+  }
+}

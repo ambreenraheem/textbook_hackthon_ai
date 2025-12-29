@@ -44,6 +44,35 @@ class Conversation(Base):
     def __repr__(self):
         return f"<Conversation(id={self.id}, session_id={self.session_id})>"
 
+    def get_messages(self, limit: int = 50):
+        """
+        Get messages in this conversation.
+
+        Args:
+            limit: Maximum number of messages to return
+
+        Returns:
+            List of Message objects ordered by creation time
+        """
+        return sorted(self.messages, key=lambda m: m.created_at)[:limit]
+
+    def get_recent_context(self, max_messages: int = 10):
+        """
+        Get recent conversation context as (role, content) tuples.
+
+        Args:
+            max_messages: Maximum number of recent messages
+
+        Returns:
+            List of (role, content) tuples
+        """
+        recent_messages = sorted(self.messages, key=lambda m: m.created_at)[-max_messages:]
+        return [(msg.role, msg.content) for msg in recent_messages]
+
+    def message_count(self) -> int:
+        """Get total number of messages in conversation."""
+        return len(self.messages)
+
 
 class Message(Base):
     """
@@ -86,3 +115,20 @@ class Message(Base):
 
     def __repr__(self):
         return f"<Message(id={self.id}, role={self.role}, conversation_id={self.conversation_id})>"
+
+    def get_cited_chunk_ids(self):
+        """
+        Get list of cited chunk UUIDs.
+
+        Returns:
+            List of UUID strings
+        """
+        return self.cited_chunks or []
+
+    def has_citations(self) -> bool:
+        """Check if message has any citations."""
+        return bool(self.cited_chunks)
+
+    def citation_count(self) -> int:
+        """Get number of citations in message."""
+        return len(self.cited_chunks) if self.cited_chunks else 0

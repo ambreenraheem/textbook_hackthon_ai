@@ -31,6 +31,7 @@ async def lifespan(app: FastAPI):
     Startup:
     - Log application start
     - Initialize settings
+    - Initialize database
 
     Shutdown:
     - Log application shutdown
@@ -41,6 +42,17 @@ async def lifespan(app: FastAPI):
         f"Starting FastAPI application in {settings.environment} environment",
         extra={"extra_fields": {"environment": settings.environment}}
     )
+
+    # Initialize database
+    from src.utils.database import init_database, create_tables
+    try:
+        init_database()
+        create_tables()
+        logger.info("Database initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize database: {e}", exc_info=True)
+        # Continue anyway - will fail on first request if database is required
+
     yield
     # Shutdown
     logger.info("Shutting down FastAPI application")
@@ -206,11 +218,10 @@ async def root():
     }
 
 
-# Import and include routers (will be created in later phases)
-# from src.api.chat import router as chat_router
-# from src.api.health import router as health_router
-# app.include_router(chat_router, prefix="/api", tags=["chat"])
-# app.include_router(health_router, prefix="/api", tags=["health"])
+# Import and include routers
+from src.api.chat import router as chat_router
+
+app.include_router(chat_router, prefix="/api", tags=["chat"])
 
 
 if __name__ == "__main__":

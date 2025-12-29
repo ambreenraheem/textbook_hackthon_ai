@@ -26,6 +26,9 @@ langchain-openai==0.0.2
 sentence-transformers==2.2.2
 tiktoken==0.5.2
 
+# Markdown & Frontmatter
+python-frontmatter==1.0.1
+
 # HTTP & Async
 httpx==0.25.2
 aiohttp==3.9.1
