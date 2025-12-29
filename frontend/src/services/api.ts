@@ -213,13 +213,15 @@ class SSEClient {
 export const sendChatMessage = async (
   message: string,
   sessionId: string,
-  callbacks: StreamCallbacks
+  callbacks: StreamCallbacks,
+  selectedText?: string
 ): Promise<void> => {
   const client = new SSEClient();
 
   const request: ChatRequest = {
     message,
     session_id: sessionId,
+    ...(selectedText && { selected_text: selectedText }),
   };
 
   await client.stream(request, callbacks);

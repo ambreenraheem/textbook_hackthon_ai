@@ -1,0 +1,50 @@
+.selectionPopup {
+  position: fixed;
+  transform: translate(-50%, -100%);
+  z-index: 10000;
+  animation: fadeIn 0.2s ease-in;
+}
+
+.askButton {
+  background: var(--ifm-color-primary);
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.askButton:hover {
+  background: var(--ifm-color-primary-dark);
+  transform: scale(1.05);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+}
+
+.askButton:active {
+  transform: scale(0.98);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -100%) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -100%) scale(1);
+  }
+}
+
+[data-theme='dark'] .askButton {
+  background: var(--ifm-color-primary-lighter);
+  color: var(--ifm-color-emphasis-900);
+}
+
+[data-theme='dark'] .askButton:hover {
+  background: var(--ifm-color-primary-lightest);
+}

@@ -34,6 +34,7 @@ export interface SSEEvent {
 export interface ChatRequest {
   message: string;
   session_id: string;
+  selected_text?: string;
 }
 
 export interface ChatError {

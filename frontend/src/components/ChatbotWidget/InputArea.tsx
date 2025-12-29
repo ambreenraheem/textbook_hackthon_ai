@@ -11,6 +11,8 @@ interface InputAreaProps {
   disabled?: boolean;
   placeholder?: string;
   maxLength?: number;
+  selectedText?: string;
+  onClearSelectedText?: () => void;
 }
 
 const InputArea: React.FC<InputAreaProps> = ({
@@ -18,6 +20,8 @@ const InputArea: React.FC<InputAreaProps> = ({
   disabled = false,
   placeholder = 'Ask a question about the textbook...',
   maxLength = 2000,
+  selectedText,
+  onClearSelectedText,
 }) => {
   const [message, setMessage] = useState('');
   const [isComposing, setIsComposing] = useState(false);
@@ -106,8 +110,38 @@ const InputArea: React.FC<InputAreaProps> = ({
     return disabled || !message.trim() || message.length > maxLength;
   };
 
+  /**
+   * Truncate selected text for display
+   */
+  const truncateText = (text: string, maxChars = 100): string => {
+    if (text.length <= maxChars) return text;
+    return text.substring(0, maxChars) + '...';
+  };
+
   return (
     <div className={styles.inputContainer}>
+      {/* Selected text context badge */}
+      {selectedText && (
+        <div className={styles.contextBadge} role="status" aria-live="polite">
+          <div className={styles.contextHeader}>
+            <span className={styles.contextIcon}>📄</span>
+            <span className={styles.contextLabel}>Selected Context:</span>
+            <button
+              className={styles.contextClearButton}
+              onClick={onClearSelectedText}
+              aria-label="Clear selected text context"
+              title="Clear context"
+              type="button"
+            >
+              ✕
+            </button>
+          </div>
+          <div className={styles.contextText} title={selectedText}>
+            "{truncateText(selectedText)}"
+          </div>
+        </div>
+      )}
+
       <div className={styles.inputWrapper}>
         <div className={styles.textareaWrapper}>
           <textarea

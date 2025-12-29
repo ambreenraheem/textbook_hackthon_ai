@@ -348,6 +348,9 @@
   background-color: var(--ifm-background-surface-color);
   border-top: 1px solid rgba(0, 0, 0, 0.1);
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 [data-theme='dark'] .inputContainer {
@@ -566,6 +569,96 @@
   border-width: 0;
 }
 
+/* ==================== Context Badge (Selected Text) ==================== */
+.contextBadge {
+  padding: 10px 12px;
+  background-color: rgba(46, 133, 85, 0.08);
+  border: 1px solid rgba(46, 133, 85, 0.2);
+  border-radius: 8px;
+  font-size: 12px;
+  animation: slideInDown 0.2s ease-out;
+}
+
+[data-theme='dark'] .contextBadge {
+  background-color: rgba(46, 133, 85, 0.15);
+  border-color: rgba(46, 133, 85, 0.3);
+}
+
+.contextHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  font-weight: 600;
+  color: var(--ifm-color-primary-dark);
+}
+
+[data-theme='dark'] .contextHeader {
+  color: var(--ifm-color-primary-light);
+}
+
+.contextIcon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.contextLabel {
+  flex: 1;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.contextClearButton {
+  background: none;
+  border: none;
+  color: rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  padding: 2px 4px;
+  font-size: 14px;
+  line-height: 1;
+  border-radius: 3px;
+  transition: all 0.2s ease;
+}
+
+.contextClearButton:hover {
+  background-color: rgba(0, 0, 0, 0.1);
+  color: rgba(0, 0, 0, 0.8);
+}
+
+[data-theme='dark'] .contextClearButton {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+[data-theme='dark'] .contextClearButton:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.contextClearButton:focus {
+  outline: 2px solid var(--ifm-color-primary);
+  outline-offset: 1px;
+}
+
+.contextText {
+  color: var(--ifm-font-color-base);
+  line-height: 1.4;
+  font-style: italic;
+  opacity: 0.9;
+  word-break: break-word;
+}
+
+@keyframes slideInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* ==================== Animations ==================== */
 @media (prefers-reduced-motion: reduce) {
   .chatbotWidget,
@@ -573,8 +666,18 @@
   .messageWrapper,
   .citationBadge,
   .suggestionButton,
-  .sendButton {
+  .sendButton,
+  .contextBadge {
     animation: none;
     transition: none;
+  }
+
+  @keyframes slideInDown {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
   }
 }

@@ -13,11 +13,15 @@ import styles from './styles.module.css';
 interface ChatbotWidgetProps {
   initialState?: WidgetState;
   sessionId?: string;
+  selectedText?: string;
+  onSelectedTextUsed?: () => void;
 }
 
 const ChatbotWidget: React.FC<ChatbotWidgetProps> = ({
   initialState = 'minimized',
   sessionId: providedSessionId,
+  selectedText,
+  onSelectedTextUsed,
 }) => {
   // Widget state
   const [widgetState, setWidgetState] = useState<WidgetState>(initialState);
@@ -172,12 +176,22 @@ const ChatbotWidget: React.FC<ChatbotWidgetProps> = ({
 
       // Start SSE stream
       try {
-        await sendChatMessage(content, sessionId, {
-          onToken: handleToken,
-          onCitation: handleCitation,
-          onDone: handleDone,
-          onError: handleError,
-        });
+        await sendChatMessage(
+          content,
+          sessionId,
+          {
+            onToken: handleToken,
+            onCitation: handleCitation,
+            onDone: handleDone,
+            onError: handleError,
+          },
+          selectedText
+        );
+
+        // Clear selected text after use
+        if (selectedText && onSelectedTextUsed) {
+          onSelectedTextUsed();
+        }
       } catch (error) {
         handleError({
           message: error instanceof Error ? error.message : 'Failed to send message',
@@ -185,7 +199,7 @@ const ChatbotWidget: React.FC<ChatbotWidgetProps> = ({
         });
       }
     },
-    [sessionId]
+    [sessionId, selectedText, onSelectedTextUsed]
   );
 
   /**
@@ -354,6 +368,8 @@ const ChatbotWidget: React.FC<ChatbotWidgetProps> = ({
         onSendMessage={handleSendMessage}
         disabled={isStreaming}
         placeholder="Ask about Physical AI, ROS 2, or robotics..."
+        selectedText={selectedText}
+        onClearSelectedText={onSelectedTextUsed}
       />
     </div>
   );
