@@ -1,0 +1,308 @@
+/* ==================== Hero Banner ==================== */
+.heroBanner {
+  padding: 4rem 0 6rem;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, var(--ifm-color-primary) 0%, var(--ifm-color-primary-dark) 100%);
+}
+
+.heroBanner .hero__title {
+  font-size: 3.5rem;
+  font-weight: 800;
+  margin-bottom: 1rem;
+  color: white;
+}
+
+.heroBanner .hero__subtitle {
+  font-size: 1.35rem;
+  margin-bottom: 2rem;
+  color: rgba(255, 255, 255, 0.95);
+  max-width: 800px;
+  margin-left: auto;
+  margin-right: auto;
+  line-height: 1.6;
+}
+
+.buttons {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+/* ==================== Features Section ==================== */
+.features {
+  padding: 4rem 0;
+  background-color: var(--ifm-background-surface-color, #f9f9f9);
+}
+
+.feature {
+  margin-bottom: 2rem;
+}
+
+.featureCard {
+  padding: 2rem;
+  height: 100%;
+  border-radius: 12px;
+  background: white;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  transition: all 0.3s ease;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.featureCard:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  border-color: var(--ifm-color-primary-lighter);
+}
+
+.featureIcon {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+  display: inline-block;
+}
+
+.featureCard h3 {
+  font-size: 1.35rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+  color: var(--ifm-color-primary-dark);
+}
+
+.featureCard p {
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: var(--ifm-font-color-base);
+  margin-bottom: 0;
+}
+
+/* ==================== Parts Section ==================== */
+.partsSection {
+  padding: 4rem 0;
+  background: white;
+}
+
+.sectionTitle {
+  text-align: center;
+  font-size: 2.5rem;
+  font-weight: 700;
+  margin-bottom: 0.75rem;
+  color: var(--ifm-heading-color);
+}
+
+.sectionSubtitle {
+  text-align: center;
+  font-size: 1.15rem;
+  color: var(--ifm-color-emphasis-700);
+  margin-bottom: 3rem;
+}
+
+.partCard {
+  display: block;
+  padding: 1.75rem;
+  margin-bottom: 1.5rem;
+  border-radius: 10px;
+  border: 2px solid var(--ifm-color-emphasis-200);
+  background: var(--ifm-background-surface-color, #f9f9f9);
+  transition: all 0.3s ease;
+  text-decoration: none;
+  color: inherit;
+  position: relative;
+  overflow: hidden;
+}
+
+.partCard::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  background: var(--ifm-color-primary);
+  transform: scaleY(0);
+  transition: transform 0.3s ease;
+}
+
+.partCard:hover {
+  border-color: var(--ifm-color-primary);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
+  transform: translateX(4px);
+}
+
+.partCard:hover::before {
+  transform: scaleY(1);
+}
+
+.partNumber {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ifm-color-primary);
+  background: rgba(46, 133, 85, 0.1);
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  margin-bottom: 0.75rem;
+}
+
+.partCard h3 {
+  font-size: 1.35rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: var(--ifm-heading-color);
+}
+
+.partChapters {
+  font-size: 0.875rem;
+  color: var(--ifm-color-primary-dark);
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+}
+
+.partCard p {
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: var(--ifm-color-emphasis-700);
+  margin-bottom: 0;
+}
+
+/* ==================== CTA Section ==================== */
+.ctaSection {
+  padding: 4rem 0 5rem;
+  text-align: center;
+  background: linear-gradient(135deg, var(--ifm-color-primary-lighter) 0%, var(--ifm-color-primary) 100%);
+  color: white;
+}
+
+.ctaSection h2 {
+  font-size: 2.5rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+  color: white;
+}
+
+.ctaSection p {
+  font-size: 1.15rem;
+  margin-bottom: 2rem;
+  max-width: 700px;
+  margin-left: auto;
+  margin-right: auto;
+  color: rgba(255, 255, 255, 0.95);
+  line-height: 1.7;
+}
+
+/* ==================== Dark Mode Adjustments ==================== */
+[data-theme='dark'] .featureCard {
+  background: var(--ifm-background-surface-color);
+  border-color: var(--ifm-color-emphasis-200);
+}
+
+[data-theme='dark'] .featureCard:hover {
+  border-color: var(--ifm-color-primary);
+}
+
+[data-theme='dark'] .partCard {
+  background: var(--ifm-background-surface-color);
+  border-color: var(--ifm-color-emphasis-300);
+}
+
+[data-theme='dark'] .partsSection {
+  background: var(--ifm-background-color);
+}
+
+/* ==================== Responsive Design ==================== */
+@media screen and (max-width: 996px) {
+  .heroBanner .hero__title {
+    font-size: 2.5rem;
+  }
+
+  .heroBanner .hero__subtitle {
+    font-size: 1.15rem;
+  }
+
+  .sectionTitle {
+    font-size: 2rem;
+  }
+
+  .ctaSection h2 {
+    font-size: 2rem;
+  }
+
+  .ctaSection p {
+    font-size: 1rem;
+  }
+}
+
+@media screen and (max-width: 768px) {
+  .heroBanner {
+    padding: 3rem 0 4rem;
+  }
+
+  .heroBanner .hero__title {
+    font-size: 2rem;
+  }
+
+  .heroBanner .hero__subtitle {
+    font-size: 1rem;
+  }
+
+  .buttons {
+    flex-direction: column;
+  }
+
+  .buttons .button {
+    width: 100%;
+    margin-left: 0 !important;
+    margin-bottom: 0.75rem;
+  }
+
+  .features {
+    padding: 2rem 0;
+  }
+
+  .partsSection {
+    padding: 2rem 0;
+  }
+
+  .sectionTitle {
+    font-size: 1.75rem;
+  }
+
+  .sectionSubtitle {
+    font-size: 1rem;
+  }
+
+  .ctaSection {
+    padding: 3rem 0;
+  }
+
+  .ctaSection h2 {
+    font-size: 1.75rem;
+  }
+
+  .ctaSection p {
+    font-size: 0.95rem;
+  }
+
+  .featureCard,
+  .partCard {
+    padding: 1.5rem;
+  }
+}
+
+@media screen and (max-width: 576px) {
+  .heroBanner .hero__title {
+    font-size: 1.75rem;
+  }
+
+  .featureIcon {
+    font-size: 2.5rem;
+  }
+
+  .partCard:hover {
+    transform: translateX(0);
+  }
+}
