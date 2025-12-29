@@ -1,0 +1,12 @@
+{
+  "label": "Part IV: Perception",
+  "position": 4,
+  "collapsible": true,
+  "collapsed": true,
+  "link": {
+    "type": "generated-index",
+    "title": "Part IV: Perception & Sensing",
+    "description": "Explore computer vision, sensor integration, and human detection techniques for robotic systems.",
+    "slug": "/part-04-perception"
+  }
+}

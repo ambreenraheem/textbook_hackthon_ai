@@ -1,0 +1,314 @@
+---
+id: ch22-hri-fundamentals
+title: Chapter 22 - Human-Robot Interaction Fundamentals
+description: Understand HRI principles, social cognition, and interaction design.
+sidebar_label: Ch 22. HRI Fundamentals
+sidebar_position: 1
+keywords: [HRI, human-robot interaction, social robotics, interaction design]
+difficulty: intermediate
+estimatedReadingTime: 25
+---
+
+# Chapter 22: Human-Robot Interaction Fundamentals
+
+## Learning Objectives
+
+By the end of this chapter, you will be able to:
+- Understand HRI principles and challenges
+- Design effective human-robot interactions
+- Implement social cues and behaviors
+- Evaluate HRI systems
+
+## Introduction
+
+Human-Robot Interaction (HRI) studies how people interact with robots and how to design robots that effectively collaborate with humans. As humanoid robots enter homes, workplaces, and public spaces, natural, intuitive, and safe interaction becomes critical.
+
+## Core HRI Principles
+
+### 1. Transparency and Predictability
+
+**Users should understand**:
+- What the robot is doing
+- Why it's doing it
+- What it will do next
+
+**Implementation**:
+```python
+class TransparentRobot:
+    def announce_action(self, action):
+        """Verbally announce actions before execution."""
+        print(f"I'm about to {action}. Is that okay?")
+        confirmation = get_user_input()
+        return confirmation == "yes"
+
+    def execute_with_feedback(self, task):
+        if self.announce_action(task.description):
+            print(f"Starting: {task.description}")
+            task.execute()
+            print(f"Completed: {task.description}")
+```
+
+### 2. Appropriateness and Social Norms
+
+Robots must respect cultural and social conventions:
+- **Personal space**: Maintain 0.5-1.2m distance (varies by culture)
+- **Eye contact**: Appropriate gaze patterns
+- **Turn-taking**: Wait for conversational cues
+- **Politeness**: Use "please" and "thank you"
+
+### 3. Trust and Reliability
+
+**Building Trust**:
+- Consistent behavior
+- Transparent failures ("I'm having trouble grasping this object")
+- Appropriate confidence ("I'm 90% certain this is a cup")
+- Safe failure modes
+
+## Proxemics: Robot Personal Space
+
+**Hall's Proxemic Zones** (adapted for robots):
+
+| Zone | Distance | Interaction Type | Robot Behavior |
+|------|----------|------------------|----------------|
+| Intimate | 0-0.45m | Physical assistance | Slow, gentle movements |
+| Personal | 0.45-1.2m | Conversation, handover | Natural gestures |
+| Social | 1.2-3.6m | Group interaction | Larger gestures visible |
+| Public | 3.6m+ | Presentations | Exaggerated motions |
+
+**Implementation**:
+```python
+def adjust_approach_distance(robot, human_position, interaction_type):
+    """Adjust robot distance based on interaction context."""
+    distance_map = {
+        'physical_assist': 0.3,
+        'conversation': 0.8,
+        'handover': 0.6,
+        'group': 2.0
+    }
+
+    target_distance = distance_map.get(interaction_type, 1.5)
+    direction = (robot.position - human_position).normalize()
+    target_position = human_position + direction * target_distance
+
+    robot.navigate_to(target_position, velocity='slow')
+```
+
+## Social Cues and Nonverbal Communication
+
+### Gaze Behavior
+
+**Functions of gaze**:
+- Signal attention and interest
+- Regulate turn-taking
+- Express emotions
+- Indicate intentions
+
+**Robot gaze strategies**:
+```python
+class SocialGaze:
+    def __init__(self, robot):
+        self.robot = robot
+
+    def mutual_gaze(self, human_face):
+        """Maintain eye contact during conversation."""
+        self.robot.head.look_at(human_face.eyes)
+
+    def gaze_aversion(self):
+        """Look away during thinking or hesitation."""
+        self.robot.head.turn(angle=30, duration=0.5)
+        time.sleep(1.0)
+        self.robot.head.center()
+
+    def joint_attention(self, object_of_interest):
+        """Look at object, then back to human to establish shared focus."""
+        self.robot.head.look_at(object_of_interest)
+        time.sleep(0.8)
+        self.robot.head.look_at(human_face)
+```
+
+### Gestures
+
+**Common robot gestures**:
+- **Pointing**: Indicate objects or directions
+- **Nodding**: Acknowledge understanding
+- **Waving**: Greeting or farewell
+- **Open palm**: Offer or request handover
+
+## Interaction Modalities
+
+### Speech and Natural Language
+
+**Design principles**:
+- Clear pronunciation
+- Appropriate volume and speed
+- Confirmations and clarifications
+- Error recovery
+
+**Example**:
+```python
+import speech_recognition as sr
+from gtts import gTTS
+
+class VoiceInteraction:
+    def __init__(self):
+        self.recognizer = sr.Recognizer()
+        self.mic = sr.Microphone()
+
+    def listen(self):
+        """Listen for user speech."""
+        with self.mic as source:
+            self.recognizer.adjust_for_ambient_noise(source)
+            audio = self.recognizer.listen(source)
+
+        try:
+            text = self.recognizer.recognize_google(audio)
+            return text
+        except sr.UnknownValueError:
+            return None
+
+    def speak(self, text):
+        """Convert text to speech."""
+        tts = gTTS(text=text, lang='en')
+        tts.save("response.mp3")
+        os.system("mpg321 response.mp3")
+
+    def conversation_turn(self):
+        """Handle one conversation turn."""
+        self.speak("How can I help you?")
+        user_input = self.listen()
+
+        if user_input:
+            self.speak(f"You said: {user_input}. Let me help with that.")
+            return user_input
+        else:
+            self.speak("I didn't catch that. Could you repeat?")
+            return self.conversation_turn()
+```
+
+### Visual Feedback
+
+**LED patterns, screen displays, projection**:
+- Blue: Listening
+- Green: Processing
+- Yellow: Warning
+- Red: Error
+
+## Trust and Acceptance
+
+### Factors Influencing Trust
+
+1. **Reliability**: Consistent performance
+2. **Transparency**: Explainable decisions
+3. **Safety**: No harm to humans
+4. **Competence**: Effective task completion
+5. **Anthropomorphism**: Human-like traits (moderate level optimal)
+
+### Uncanny Valley
+
+**Concept**: As robots become more human-like, acceptance increases until resemblance becomes "too realistic" causing discomfort.
+
+**Design implications**:
+- Clearly robotic or clearly human
+- Avoid "almost human" appearance
+- Focus on functional design
+
+## Collaboration Patterns
+
+### Human as Supervisor
+
+Robot operates autonomously, human monitors:
+```python
+def supervised_cleaning(robot, area):
+    """Robot cleans, human supervises."""
+    robot.start_cleaning(area)
+
+    while not robot.task_complete():
+        status = robot.get_status()
+        display_to_user(status)
+
+        if robot.needs_help():
+            alert_user("Robot needs assistance")
+            wait_for_user_intervention()
+
+    robot.return_to_dock()
+```
+
+### Human-Robot Collaboration
+
+Shared task execution:
+```python
+def collaborative_assembly(robot, human, parts):
+    """Human and robot assemble together."""
+    for part in parts:
+        if part.requires_precision():
+            robot.install_part(part)
+        elif part.requires_strength():
+            notify_human(f"Please install {part.name}")
+            wait_for_completion()
+        else:
+            # Decide based on availability
+            if human.is_busy():
+                robot.install_part(part)
+            else:
+                notify_human(f"{part.name} ready for installation")
+```
+
+## Evaluation Metrics
+
+### Objective Measures
+
+- **Task completion time**
+- **Error rate**
+- **Number of interventions needed**
+- **Physical safety (collisions, forces)**
+
+### Subjective Measures
+
+**Questionnaires**:
+- Godspeed Questionnaire (anthropomorphism, animacy, likeability, perceived intelligence, safety)
+- System Usability Scale (SUS)
+- Trust scales
+
+**Example evaluation**:
+```python
+def evaluate_hri_session(task_log, user_responses):
+    """Compute HRI metrics."""
+    metrics = {
+        'completion_time': task_log.duration,
+        'errors': len(task_log.errors),
+        'interventions': task_log.human_interventions,
+        'sus_score': compute_sus(user_responses),
+        'trust_score': compute_trust_scale(user_responses),
+        'likeability': user_responses['godspeed_likeability']
+    }
+    return metrics
+```
+
+## Challenges in HRI
+
+1. **Expectation Management**: Users may over or underestimate capabilities
+2. **Individual Differences**: Age, tech-savviness, cultural background
+3. **Long-Term Interaction**: Maintaining engagement over time
+4. **Privacy Concerns**: Cameras, microphones in homes
+5. **Emotional Attachment**: Balancing companionship with realistic expectations
+
+## Key Takeaways
+
+- HRI focuses on natural, intuitive, safe human-robot collaboration
+- Transparency, predictability, and social appropriateness are core principles
+- Proxemics defines comfortable interaction distances
+- Social cues (gaze, gestures, speech) enable natural communication
+- Trust is built through reliability, transparency, and safety
+- Evaluation combines objective metrics with subjective user assessments
+- Long-term acceptance requires managing expectations and respecting privacy
+
+## What's Next?
+
+Chapter 23 explores **Interaction Modalities** in depth—voice interfaces, gesture recognition, AR/VR, and multimodal fusion for rich human-robot communication.
+
+### Further Resources
+
+- **Books**: "Human-Robot Interaction: An Introduction" by Christoph Bartneck et al.
+- **Conferences**: ACM/IEEE HRI, RO-MAN (RObotic and MANipulation)
+- **Journals**: International Journal of Social Robotics
+- **Tools**: Godspeed Questionnaire, ROS speech recognition packages

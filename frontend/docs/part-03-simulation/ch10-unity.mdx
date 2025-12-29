@@ -1,0 +1,1278 @@
+---
+id: ch10-unity
+title: Chapter 10 - Unity for Robotics
+description: Use Unity for high-fidelity robot simulation, visualization, and training.
+sidebar_label: Ch 10. Unity
+sidebar_position: 2
+keywords: [Unity, robotics simulation, visualization, training]
+difficulty: intermediate
+estimatedReadingTime: 25
+---
+
+# Chapter 10: Unity for Robotics
+
+## Learning Objectives
+
+By the end of this chapter, you will be able to:
+- Set up Unity for robotics projects
+- Create realistic robot models and environments
+- Integrate Unity with ROS 2
+- Use Unity for ML training scenarios
+
+## Introduction
+
+Unity has emerged as a powerful platform for robotics simulation, offering photorealistic rendering, intuitive environment creation, and seamless integration with machine learning frameworks. While traditionally known as a game engine, Unity's Robotics Hub transforms it into a sophisticated simulation platform for developing, testing, and training robotic systems—particularly those requiring visual perception and AI-based control.
+
+Unity excels in scenarios where visual fidelity matters: computer vision training, human-robot interaction, synthetic data generation, and reinforcement learning. Its asset ecosystem, powerful editor, and C# scripting make it accessible to both robotics engineers and developers without deep simulation expertise.
+
+### Why Use Unity for Robotics?
+
+**Key Advantages:**
+- **Photorealistic rendering**: High-quality graphics for vision-based AI training
+- **Intuitive editor**: Visual scene creation without XML/code
+- **ML-Agents toolkit**: Built-in reinforcement learning framework
+- **Synthetic data generation**: Generate labeled datasets at scale
+- **Cross-platform**: Deploy simulations on Windows, Linux, macOS
+- **Asset store**: Thousands of ready-made 3D models and environments
+- **Performance**: GPU-accelerated physics (PhysX) and rendering
+
+**When to Choose Unity:**
+- Computer vision and perception systems
+- Reinforcement learning for robot control
+- Human-robot interaction scenarios
+- Synthetic data generation for ML training
+- Marketing demos and visualizations
+- Multi-agent scenarios with visual complexity
+
+**Unity vs. Gazebo:**
+
+| Feature | Unity | Gazebo |
+|---------|-------|--------|
+| **Graphics** | Photorealistic (game engine) | Functional (simulation-focused) |
+| **Editor** | Visual GUI, intuitive | XML/SDF, code-based |
+| **ML Integration** | ML-Agents (native) | External (PyTorch, TensorFlow) |
+| **ROS 2 Support** | Via ROS-TCP-Connector | Native gazebo_ros_pkgs |
+| **Physics** | PhysX (fast, game-like) | ODE/DART/Bullet (research-grade) |
+| **Community** | Game dev + Robotics | Pure robotics |
+| **Cost** | Free (Personal), Paid (Pro) | Fully open-source |
+
+## Getting Started with Unity Robotics
+
+### Installation
+
+**1. Install Unity Hub and Unity Editor:**
+
+```bash
+# Download Unity Hub from unity.com
+# Recommended version: Unity 2021.3 LTS or 2022.3 LTS
+
+# Install required modules:
+# - Linux Build Support (for ROS 2 compatibility)
+# - Visual Studio or VS Code
+```
+
+**2. Install Unity Robotics Packages:**
+
+Create a new Unity project, then install via Package Manager:
+
+```
+Window > Package Manager > Add package from git URL:
+
+1. https://github.com/Unity-Technologies/Unity-Robotics-Hub.git?path=/com.unity.robotics.ros-tcp-connector
+2. https://github.com/Unity-Technologies/Unity-Robotics-Hub.git?path=/com.unity.robotics.urdf-importer
+3. https://github.com/Unity-Technologies/Unity-Robotics-Hub.git?path=/com.unity.robotics.visualizations
+```
+
+**3. Install ML-Agents (for reinforcement learning):**
+
+```bash
+# Python side
+pip install mlagents==0.30.0
+
+# Unity Package Manager
+# Add: com.unity.ml-agents
+```
+
+### Project Setup
+
+**Basic Unity Robotics Project Structure:**
+
+```
+RoboticsProject/
+├── Assets/
+│   ├── Robots/           # Robot models (URDF imports)
+│   ├── Scenes/           # Simulation environments
+│   ├── Scripts/          # C# control scripts
+│   ├── Materials/        # Visual materials
+│   ├── Prefabs/          # Reusable objects
+│   └── ML-Agents/        # RL training configs
+├── Packages/
+│   ├── ROS-TCP-Connector
+│   ├── URDF-Importer
+│   └── ML-Agents
+└── ProjectSettings/
+```
+
+## ROS 2 Integration
+
+### Unity ROS-TCP-Connector
+
+The ROS-TCP-Connector bridges Unity and ROS 2 via TCP, enabling message exchange without native DDS integration.
+
+**Architecture:**
+
+```
+┌─────────────────────┐         TCP          ┌──────────────────┐
+│   Unity Simulation  │◄──────────────────►│  ROS 2 System    │
+│  (ROS-TCP-Connector)│                      │  (ROS-TCP-Endpoint)│
+└─────────────────────┘                      └──────────────────┘
+    │                                              │
+    ├─ Robot Models                                ├─ ROS 2 Nodes
+    ├─ Sensors                                     ├─ Controllers
+    └─ Publishers/Subscribers                      └─ Perception
+```
+
+### Setting Up ROS-TCP-Endpoint
+
+**1. Install ROS 2 Endpoint Package:**
+
+```bash
+# In your ROS 2 workspace
+cd ~/ros2_ws/src
+git clone https://github.com/Unity-Technologies/ROS-TCP-Endpoint
+cd ~/ros2_ws
+colcon build --packages-select ros_tcp_endpoint
+source install/setup.bash
+```
+
+**2. Launch ROS-TCP-Endpoint:**
+
+```bash
+# Default configuration (port 10000)
+ros2 run ros_tcp_endpoint default_server_endpoint --ros-args -p ROS_IP:=127.0.0.1
+```
+
+**3. Configure Unity ROS Settings:**
+
+In Unity: `Robotics > ROS Settings`
+- ROS IP Address: `127.0.0.1`
+- ROS Port: `10000`
+- Protocol: `ROS 2`
+
+### Publishing Sensor Data to ROS 2
+
+**Example: Camera Image Publisher (C#):**
+
+```csharp
+using UnityEngine;
+using Unity.Robotics.ROSTCPConnector;
+using RosMessageTypes.Sensor;
+
+public class CameraPublisher : MonoBehaviour
+{
+    private ROSConnection ros;
+    public string topicName = "/camera/image_raw";
+    public Camera sensorCamera;
+    public float publishFrequency = 30f;
+
+    private RenderTexture renderTexture;
+    private Texture2D texture2D;
+    private float timer;
+
+    void Start()
+    {
+        ros = ROSConnection.GetOrCreateInstance();
+        ros.RegisterPublisher<ImageMsg>(topicName);
+
+        // Create render texture
+        renderTexture = new RenderTexture(640, 480, 24);
+        sensorCamera.targetTexture = renderTexture;
+        texture2D = new Texture2D(640, 480, TextureFormat.RGB24, false);
+    }
+
+    void Update()
+    {
+        timer += Time.deltaTime;
+        if (timer >= 1f / publishFrequency)
+        {
+            PublishImage();
+            timer = 0;
+        }
+    }
+
+    void PublishImage()
+    {
+        // Render camera to texture
+        RenderTexture.active = renderTexture;
+        texture2D.ReadPixels(new Rect(0, 0, 640, 480), 0, 0);
+        texture2D.Apply();
+
+        // Create ROS message
+        ImageMsg msg = new ImageMsg
+        {
+            header = new RosMessageTypes.Std.HeaderMsg
+            {
+                stamp = new RosMessageTypes.BuiltinInterfaces.TimeMsg
+                {
+                    sec = (int)Time.time,
+                    nanosec = (uint)((Time.time % 1) * 1e9)
+                },
+                frame_id = "camera_link"
+            },
+            height = 480,
+            width = 640,
+            encoding = "rgb8",
+            is_bigendian = 0,
+            step = 640 * 3,
+            data = texture2D.GetRawTextureData()
+        };
+
+        ros.Publish(topicName, msg);
+    }
+}
+```
+
+### Subscribing to ROS 2 Commands
+
+**Example: Joint Command Subscriber:**
+
+```csharp
+using UnityEngine;
+using Unity.Robotics.ROSTCPConnector;
+using RosMessageTypes.Std;
+
+public class JointCommandSubscriber : MonoBehaviour
+{
+    private ROSConnection ros;
+    public string topicName = "/joint_commands";
+    public ArticulationBody[] joints;
+
+    void Start()
+    {
+        ros = ROSConnection.GetOrCreateInstance();
+        ros.Subscribe<Float64MultiArrayMsg>(topicName, ApplyJointCommands);
+    }
+
+    void ApplyJointCommands(Float64MultiArrayMsg msg)
+    {
+        for (int i = 0; i < msg.data.Length && i < joints.Length; i++)
+        {
+            ArticulationDrive drive = joints[i].xDrive;
+            drive.target = (float)msg.data[i] * Mathf.Rad2Deg; // Convert to degrees
+            joints[i].xDrive = drive;
+        }
+    }
+}
+```
+
+## Importing and Simulating Robots
+
+### URDF Import
+
+Unity's URDF Importer converts ROS robot descriptions to Unity GameObjects with ArticulationBody components.
+
+**Import Process:**
+
+1. **Assets > Import Robot from URDF**
+2. Select your URDF file
+3. Configure import settings:
+   - Axis Type: Y-up (Unity convention)
+   - Mesh Decomposer: VHACD (for complex meshes)
+   - Joint Limits: Import from URDF
+
+**Post-Import Setup:**
+
+```csharp
+// Add this script to imported robot root
+using UnityEngine;
+
+public class HumanoidRobotController : MonoBehaviour
+{
+    private ArticulationBody[] articulationChain;
+
+    void Start()
+    {
+        articulationChain = GetComponentsInChildren<ArticulationBody>();
+
+        // Configure physics
+        foreach (var joint in articulationChain)
+        {
+            joint.linearDamping = 0.05f;
+            joint.angularDamping = 0.05f;
+            joint.jointFriction = 0.05f;
+
+            // Set joint drives for control
+            if (joint.jointType != ArticulationJointType.FixedJoint)
+            {
+                ArticulationDrive drive = joint.xDrive;
+                drive.stiffness = 10000;
+                drive.damping = 100;
+                drive.forceLimit = 1000;
+                joint.xDrive = drive;
+            }
+        }
+    }
+}
+```
+
+## Physics Simulation with ArticulationBody
+
+Unity uses PhysX 5 for physics simulation. For robots, **ArticulationBody** provides reduced-coordinate simulation (more stable than Rigidbody for articulated systems).
+
+### Configuring Robot Joints
+
+```csharp
+using UnityEngine;
+
+public class JointConfigurator : MonoBehaviour
+{
+    public ArticulationBody hipJoint;
+
+    void ConfigureRevoluteJoint()
+    {
+        // Set joint type
+        hipJoint.jointType = ArticulationJointType.RevoluteJoint;
+
+        // Configure motion
+        hipJoint.linearDamping = 0.05f;
+        hipJoint.angularDamping = 0.05f;
+        hipJoint.jointFriction = 0.05f;
+
+        // Configure drive (PD controller)
+        ArticulationDrive drive = hipJoint.xDrive;
+        drive.stiffness = 5000f;      // Proportional gain
+        drive.damping = 200f;         // Derivative gain
+        drive.forceLimit = 500f;      // Max torque
+        drive.lowerLimit = -90f;      // Joint limits (degrees)
+        drive.upperLimit = 90f;
+        hipJoint.xDrive = drive;
+    }
+
+    void ApplyTorque(float targetAngle)
+    {
+        ArticulationDrive drive = hipJoint.xDrive;
+        drive.target = targetAngle;   // Target angle in degrees
+        hipJoint.xDrive = drive;
+    }
+}
+```
+
+### Physics Tuning
+
+**Project Settings > Physics:**
+- **Default Solver Iterations**: 6 (increase for stability)
+- **Default Solver Velocity Iterations**: 1
+- **Fixed Timestep**: 0.01 (100 Hz) or 0.02 (50 Hz)
+- **Max Angular Velocity**: 50 (prevent explosions)
+
+:::tip ArticulationBody vs Rigidbody
+For robots with kinematic chains (humanoids, manipulators), always use **ArticulationBody**. It implements a reduced-coordinate solver that maintains joint constraints better than Rigidbody chains, preventing drift and instability.
+:::
+
+## Sensor Simulation
+
+### RGB Camera
+
+```csharp
+using UnityEngine;
+
+public class RGBCamera : MonoBehaviour
+{
+    public Camera cam;
+    private RenderTexture renderTexture;
+
+    void Start()
+    {
+        renderTexture = new RenderTexture(1920, 1080, 24);
+        cam.targetTexture = renderTexture;
+        cam.fieldOfView = 60f;
+    }
+
+    public byte[] CaptureImage()
+    {
+        Texture2D tex = new Texture2D(1920, 1080, TextureFormat.RGB24, false);
+        RenderTexture.active = renderTexture;
+        tex.ReadPixels(new Rect(0, 0, 1920, 1080), 0, 0);
+        tex.Apply();
+        return tex.EncodeToJPG();
+    }
+}
+```
+
+### Depth Camera
+
+```csharp
+using UnityEngine;
+
+public class DepthCamera : MonoBehaviour
+{
+    public Camera depthCam;
+    private RenderTexture depthTexture;
+
+    void Start()
+    {
+        // Configure for depth
+        depthCam.depthTextureMode = DepthTextureMode.Depth;
+        depthTexture = new RenderTexture(640, 480, 24, RenderTextureFormat.Depth);
+        depthCam.targetTexture = depthTexture;
+
+        // Custom shader for depth visualization
+        depthCam.SetReplacementShader(Shader.Find("Custom/DepthShader"), "");
+    }
+
+    public float GetDepthAtPixel(int x, int y)
+    {
+        RenderTexture.active = depthTexture;
+        Texture2D tex = new Texture2D(1, 1, TextureFormat.RFloat, false);
+        tex.ReadPixels(new Rect(x, y, 1, 1), 0, 0);
+        tex.Apply();
+        return tex.GetPixel(0, 0).r;
+    }
+}
+```
+
+### LiDAR Simulation (Raycasting)
+
+```csharp
+using UnityEngine;
+
+public class LidarSensor : MonoBehaviour
+{
+    public int horizontalRays = 360;
+    public float horizontalFOV = 360f;
+    public int verticalRays = 16;
+    public float verticalFOV = 30f;
+    public float maxRange = 30f;
+    public LayerMask layerMask;
+
+    public struct LidarPoint
+    {
+        public Vector3 position;
+        public float distance;
+        public float intensity;
+    }
+
+    public LidarPoint[] Scan()
+    {
+        List<LidarPoint> points = new List<LidarPoint>();
+
+        float horizontalAngleStep = horizontalFOV / horizontalRays;
+        float verticalAngleStep = verticalFOV / verticalRays;
+
+        for (int v = 0; v < verticalRays; v++)
+        {
+            float verticalAngle = -verticalFOV / 2 + v * verticalAngleStep;
+
+            for (int h = 0; h < horizontalRays; h++)
+            {
+                float horizontalAngle = -horizontalFOV / 2 + h * horizontalAngleStep;
+
+                // Calculate ray direction
+                Vector3 direction = Quaternion.Euler(verticalAngle, horizontalAngle, 0) * transform.forward;
+
+                // Cast ray
+                RaycastHit hit;
+                if (Physics.Raycast(transform.position, direction, out hit, maxRange, layerMask))
+                {
+                    points.Add(new LidarPoint
+                    {
+                        position = hit.point,
+                        distance = hit.distance,
+                        intensity = 1.0f - (hit.distance / maxRange) // Simple intensity model
+                    });
+                }
+            }
+        }
+
+        return points.ToArray();
+    }
+}
+```
+
+### IMU Sensor
+
+```csharp
+using UnityEngine;
+
+public class IMUSensor : MonoBehaviour
+{
+    private ArticulationBody articulationBody;
+    private Vector3 lastVelocity;
+    private float lastUpdateTime;
+
+    public Vector3 linearAcceleration { get; private set; }
+    public Vector3 angularVelocity { get; private set; }
+    public Quaternion orientation { get; private set; }
+
+    void Start()
+    {
+        articulationBody = GetComponent<ArticulationBody>();
+        lastUpdateTime = Time.time;
+    }
+
+    void FixedUpdate()
+    {
+        float dt = Time.time - lastUpdateTime;
+
+        // Angular velocity (rad/s)
+        angularVelocity = articulationBody.angularVelocity;
+
+        // Linear acceleration (m/s²)
+        Vector3 currentVelocity = articulationBody.velocity;
+        linearAcceleration = (currentVelocity - lastVelocity) / dt;
+        lastVelocity = currentVelocity;
+
+        // Orientation
+        orientation = transform.rotation;
+
+        // Add sensor noise (optional)
+        linearAcceleration += new Vector3(
+            Random.Range(-0.01f, 0.01f),
+            Random.Range(-0.01f, 0.01f),
+            Random.Range(-0.01f, 0.01f)
+        );
+
+        lastUpdateTime = Time.time;
+    }
+}
+```
+
+## Machine Learning with ML-Agents
+
+### Training Humanoid Walking with PPO
+
+ML-Agents uses Proximal Policy Optimization (PPO) for training robot behaviors.
+
+**1. Create ML-Agents Training Environment:**
+
+```csharp
+using UnityEngine;
+using Unity.MLAgents;
+using Unity.MLAgents.Actuators;
+using Unity.MLAgents.Sensors;
+
+public class HumanoidWalkingAgent : Agent
+{
+    public ArticulationBody[] joints;
+    public Transform target;
+    private Vector3 startPosition;
+
+    public override void Initialize()
+    {
+        startPosition = transform.position;
+    }
+
+    public override void OnEpisodeBegin()
+    {
+        // Reset robot position
+        transform.position = startPosition;
+        transform.rotation = Quaternion.identity;
+
+        // Reset joint velocities
+        foreach (var joint in joints)
+        {
+            joint.velocity = Vector3.zero;
+            joint.angularVelocity = Vector3.zero;
+        }
+
+        // Randomize target position
+        target.position = new Vector3(
+            Random.Range(-5f, 5f),
+            0,
+            Random.Range(-5f, 5f)
+        );
+    }
+
+    public override void CollectObservations(VectorSensor sensor)
+    {
+        // Robot state: 51 observations
+        // - Position and velocity (6)
+        sensor.AddObservation(transform.localPosition);
+        sensor.AddObservation(GetComponent<ArticulationBody>().velocity);
+
+        // - Rotation (4)
+        sensor.AddObservation(transform.localRotation);
+
+        // - Joint positions and velocities (joints.Length * 2)
+        foreach (var joint in joints)
+        {
+            sensor.AddObservation(joint.xDrive.target);
+            sensor.AddObservation(joint.jointVelocity[0]);
+        }
+
+        // - Target direction (3)
+        Vector3 toTarget = target.position - transform.position;
+        sensor.AddObservation(toTarget.normalized);
+
+        // - Distance to target (1)
+        sensor.AddObservation(toTarget.magnitude);
+    }
+
+    public override void OnActionReceived(ActionBuffers actions)
+    {
+        // Apply joint torques from neural network
+        for (int i = 0; i < joints.Length; i++)
+        {
+            float targetAngle = actions.ContinuousActions[i] * 45f; // Scale to [-45, 45] degrees
+            ArticulationDrive drive = joints[i].xDrive;
+            drive.target = targetAngle;
+            joints[i].xDrive = drive;
+        }
+
+        // Rewards
+        float distanceToTarget = Vector3.Distance(transform.position, target.position);
+        float previousDistance = Vector3.Distance(startPosition, target.position);
+
+        // Reward: moving closer to target
+        AddReward((previousDistance - distanceToTarget) * 0.1f);
+
+        // Reward: staying upright
+        float uprightBonus = Vector3.Dot(transform.up, Vector3.up);
+        AddReward(uprightBonus * 0.01f);
+
+        // Reward: forward velocity
+        float forwardVelocity = Vector3.Dot(GetComponent<ArticulationBody>().velocity, transform.forward);
+        AddReward(forwardVelocity * 0.01f);
+
+        // Penalties
+        if (transform.position.y < 0.2f) // Fell over
+        {
+            AddReward(-1.0f);
+            EndEpisode();
+        }
+
+        if (distanceToTarget < 0.5f) // Reached target
+        {
+            AddReward(1.0f);
+            EndEpisode();
+        }
+
+        // Energy penalty
+        float energyUsed = 0;
+        foreach (var joint in joints)
+        {
+            energyUsed += Mathf.Abs(joint.jointForce[0]);
+        }
+        AddReward(-energyUsed * 0.0001f);
+    }
+
+    public override void Heuristic(in ActionBuffers actionsOut)
+    {
+        // Manual control for testing
+        var continuousActions = actionsOut.ContinuousActions;
+        continuousActions[0] = Input.GetAxis("Horizontal");
+        continuousActions[1] = Input.GetAxis("Vertical");
+    }
+}
+```
+
+**2. ML-Agents Configuration (humanoid_config.yaml):**
+
+```yaml
+behaviors:
+  HumanoidWalking:
+    trainer_type: ppo
+    hyperparameters:
+      batch_size: 2048
+      buffer_size: 20480
+      learning_rate: 0.0003
+      beta: 0.005
+      epsilon: 0.2
+      lambd: 0.95
+      num_epoch: 3
+      learning_rate_schedule: linear
+    network_settings:
+      normalize: true
+      hidden_units: 512
+      num_layers: 3
+      vis_encode_type: simple
+    reward_signals:
+      extrinsic:
+        gamma: 0.99
+        strength: 1.0
+    keep_checkpoints: 5
+    max_steps: 10000000
+    time_horizon: 1000
+    summary_freq: 30000
+```
+
+**3. Train the Agent:**
+
+```bash
+# Start training
+mlagents-learn humanoid_config.yaml --run-id=humanoid_walk_v1
+
+# In Unity: Press Play button to start training
+```
+
+**4. Inference (Deploy Trained Model):**
+
+```csharp
+using Unity.MLAgents.Policies;
+
+public class DeployTrainedModel : MonoBehaviour
+{
+    void Start()
+    {
+        var behaviorParams = GetComponent<BehaviorParameters>();
+        behaviorParams.Model = Resources.Load<NNModel>("TrainedModels/HumanoidWalk");
+        behaviorParams.InferenceDevice = InferenceDevice.GPU;
+    }
+}
+```
+
+## Synthetic Data Generation
+
+Unity excels at generating labeled datasets for computer vision training.
+
+### Perception Package Setup
+
+```bash
+# Install Unity Perception package
+# Package Manager > Add package from git URL:
+# https://github.com/Unity-Technologies/com.unity.perception.git
+```
+
+### Creating Labeled Dataset
+
+```csharp
+using UnityEngine;
+using UnityEngine.Perception.GroundTruth;
+using UnityEngine.Perception.Randomization.Scenarios;
+
+public class SyntheticDataGenerator : MonoBehaviour
+{
+    public Camera perceptionCamera;
+
+    void Start()
+    {
+        // Add perception camera component
+        var perceptionCam = perceptionCamera.gameObject.AddComponent<PerceptionCamera>();
+
+        // Configure labelers
+        perceptionCam.AddLabeler(new BoundingBox2DLabeler());
+        perceptionCam.AddLabeler(new SemanticSegmentationLabeler());
+        perceptionCam.AddLabeler(new InstanceSegmentationLabeler());
+        perceptionCam.AddLabeler(new KeypointLabeler());
+
+        // Configure scenario
+        var scenario = gameObject.AddComponent<FixedLengthScenario>();
+        scenario.constants.framesPerIteration = 1;
+        scenario.constants.totalIterations = 10000;
+    }
+}
+```
+
+### Domain Randomization
+
+```csharp
+using UnityEngine;
+using UnityEngine.Perception.Randomization.Randomizers;
+using UnityEngine.Perception.Randomization.Parameters;
+
+public class LightingRandomizer : Randomizer
+{
+    public FloatParameter lightIntensity = new FloatParameter { value = new UniformSampler(0.5f, 2.0f) };
+    public ColorRgbParameter lightColor = new ColorRgbParameter();
+
+    protected override void OnIterationStart()
+    {
+        Light[] lights = FindObjectsOfType<Light>();
+        foreach (Light light in lights)
+        {
+            light.intensity = lightIntensity.Sample();
+            light.color = lightColor.Sample();
+        }
+    }
+}
+
+public class TextureRandomizer : Randomizer
+{
+    public Texture2D[] textures;
+
+    protected override void OnIterationStart()
+    {
+        Renderer[] renderers = FindObjectsOfType<Renderer>();
+        foreach (Renderer renderer in renderers)
+        {
+            Texture2D randomTexture = textures[Random.Range(0, textures.Length)];
+            renderer.material.mainTexture = randomTexture;
+        }
+    }
+}
+```
+
+## Creating Realistic Environments
+
+### Environment Best Practices
+
+1. **Lighting**: Use HDRP for photorealism
+   - Install: Package Manager > High Definition RP
+   - Use HDRI skyboxes
+   - Baked global illumination for static objects
+
+2. **Materials**: Physically-based rendering (PBR)
+   - Albedo, Normal, Metallic, Smoothness maps
+   - Unity Asset Store has thousands of materials
+
+3. **Post-processing**:
+   - Ambient Occlusion
+   - Bloom
+   - Color Grading
+   - Motion Blur (optional)
+
+**Example HDRP Scene Setup:**
+
+```csharp
+using UnityEngine;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.HighDefinition;
+
+public class HDRPSceneSetup : MonoBehaviour
+{
+    public Volume globalVolume;
+
+    void Start()
+    {
+        VolumeProfile profile = globalVolume.profile;
+
+        // Ambient Occlusion
+        if (profile.TryGet<AmbientOcclusion>(out var ao))
+        {
+            ao.intensity.value = 0.5f;
+            ao.directLightingStrength.value = 0.25f;
+        }
+
+        // Exposure
+        if (profile.TryGet<Exposure>(out var exposure))
+        {
+            exposure.mode.value = ExposureMode.Automatic;
+        }
+
+        // Bloom
+        if (profile.TryGet<Bloom>(out var bloom))
+        {
+            bloom.intensity.value = 0.2f;
+            bloom.threshold.value = 1.0f;
+        }
+    }
+}
+```
+
+## Performance Optimization
+
+### GPU Instancing
+
+For multiple similar robots:
+
+```csharp
+using UnityEngine;
+
+public class MultiRobotSpawner : MonoBehaviour
+{
+    public GameObject robotPrefab;
+    public int robotCount = 100;
+
+    void Start()
+    {
+        for (int i = 0; i < robotCount; i++)
+        {
+            Vector3 position = new Vector3(
+                Random.Range(-50f, 50f),
+                0,
+                Random.Range(-50f, 50f)
+            );
+
+            GameObject robot = Instantiate(robotPrefab, position, Quaternion.identity);
+
+            // Enable GPU instancing on materials
+            Renderer[] renderers = robot.GetComponentsInChildren<Renderer>();
+            foreach (Renderer r in renderers)
+            {
+                r.material.enableInstancing = true;
+            }
+        }
+    }
+}
+```
+
+### Level of Detail (LOD)
+
+```csharp
+using UnityEngine;
+
+public class LODSetup : MonoBehaviour
+{
+    void ConfigureLOD()
+    {
+        LODGroup lodGroup = gameObject.AddComponent<LODGroup>();
+
+        LOD[] lods = new LOD[3];
+
+        // High detail (close)
+        lods[0] = new LOD(0.5f, GetComponent<Renderer>());
+
+        // Medium detail
+        lods[1] = new LOD(0.2f, transform.GetChild(0).GetComponent<Renderer>());
+
+        // Low detail (far)
+        lods[2] = new LOD(0.05f, transform.GetChild(1).GetComponent<Renderer>());
+
+        lodGroup.SetLODs(lods);
+        lodGroup.RecalculateBounds();
+    }
+}
+```
+
+## Best Practices
+
+### 1. Physics Stability
+
+- Use **ArticulationBody** for robots
+- Set appropriate **Fixed Timestep** (0.01 - 0.02)
+- Increase **Solver Iterations** if joints are unstable
+- Avoid extreme mass ratios between connected bodies
+
+### 2. Performance
+
+- Use **GPU Instancing** for repeated objects
+- Implement **LOD Groups** for complex models
+- Use **Occlusion Culling**
+- Profile with Unity Profiler regularly
+
+### 3. ROS 2 Integration
+
+- Keep message frequency reasonable (10-30 Hz for images, 100 Hz for IMU)
+- Use appropriate message types
+- Handle disconnections gracefully
+- Test network latency
+
+### 4. ML Training
+
+- Normalize observations
+- Design sparse rewards carefully
+- Use curriculum learning for complex tasks
+- Save checkpoints frequently
+
+## Common Pitfalls
+
+### 1. ArticulationBody Explosions
+
+**Symptoms:** Robot flies apart or vibrates violently
+
+**Solutions:**
+```csharp
+// Reduce drive stiffness
+drive.stiffness = 1000f; // Instead of 100000f
+
+// Increase damping
+articulationBody.angularDamping = 0.5f;
+articulationBody.linearDamping = 0.5f;
+
+// Reduce timestep
+// Edit > Project Settings > Time > Fixed Timestep = 0.01
+```
+
+### 2. ROS Connection Issues
+
+**Symptoms:** Messages not received in Unity or ROS 2
+
+**Solutions:**
+- Verify ROS-TCP-Endpoint is running
+- Check IP address and port settings
+- Ensure message types are correctly registered
+- Look for firewall blocking TCP connections
+
+### 3. Poor ML Training Performance
+
+**Symptoms:** Agent not learning, reward not increasing
+
+**Solutions:**
+- Check observation normalization
+- Simplify reward function initially
+- Reduce action space
+- Increase training environments (parallel instances)
+- Verify episode termination conditions
+
+## Complete Example: Humanoid Navigation
+
+**Project Structure:**
+```
+HumanoidNavigation/
+├── Assets/
+│   ├── Robots/
+│   │   └── Humanoid.prefab
+│   ├── Scenes/
+│   │   └── NavigationEnvironment.unity
+│   ├── Scripts/
+│   │   ├── HumanoidAgent.cs
+│   │   ├── CameraPublisher.cs
+│   │   └── LidarSensor.cs
+│   └── ML-Agents/
+│       └── config.yaml
+```
+
+**Full Navigation Agent:**
+
+```csharp
+using UnityEngine;
+using Unity.MLAgents;
+using Unity.MLAgents.Actuators;
+using Unity.MLAgents.Sensors;
+using Unity.Robotics.ROSTCPConnector;
+using RosMessageTypes.Geometry;
+
+public class HumanoidNavigationAgent : Agent
+{
+    [Header("Robot Components")]
+    public ArticulationBody[] legJoints;
+    public Transform torso;
+    public LidarSensor lidar;
+
+    [Header("Environment")]
+    public Transform target;
+    public Transform[] obstacles;
+
+    [Header("ROS Integration")]
+    public bool publishToROS = true;
+    private ROSConnection ros;
+
+    private Vector3 startPosition;
+    private Quaternion startRotation;
+
+    public override void Initialize()
+    {
+        startPosition = torso.position;
+        startRotation = torso.rotation;
+
+        if (publishToROS)
+        {
+            ros = ROSConnection.GetOrCreateInstance();
+            ros.RegisterPublisher<PoseStampedMsg>("/robot/pose");
+        }
+    }
+
+    public override void OnEpisodeBegin()
+    {
+        // Reset robot
+        torso.position = startPosition;
+        torso.rotation = startRotation;
+
+        foreach (var joint in legJoints)
+        {
+            joint.velocity = Vector3.zero;
+            joint.angularVelocity = Vector3.zero;
+        }
+
+        // Randomize target
+        target.position = new Vector3(
+            Random.Range(-10f, 10f),
+            0.5f,
+            Random.Range(-10f, 10f)
+        );
+
+        // Randomize obstacles
+        foreach (var obstacle in obstacles)
+        {
+            obstacle.position = new Vector3(
+                Random.Range(-8f, 8f),
+                0.5f,
+                Random.Range(-8f, 8f)
+            );
+        }
+    }
+
+    public override void CollectObservations(VectorSensor sensor)
+    {
+        // Torso state (10)
+        sensor.AddObservation(torso.localPosition);
+        sensor.AddObservation(torso.localRotation);
+        sensor.AddObservation(torso.GetComponent<ArticulationBody>().velocity);
+
+        // Joint states (legJoints.Length * 2)
+        foreach (var joint in legJoints)
+        {
+            sensor.AddObservation(joint.xDrive.target);
+            sensor.AddObservation(joint.jointVelocity[0]);
+        }
+
+        // Target direction and distance (4)
+        Vector3 toTarget = target.position - torso.position;
+        sensor.AddObservation(toTarget.normalized);
+        sensor.AddObservation(toTarget.magnitude);
+
+        // Lidar scan (simplified to 8 rays)
+        var lidarData = lidar.Scan();
+        float[] distances = new float[8];
+        int raysPerSector = lidarData.Length / 8;
+        for (int i = 0; i < 8; i++)
+        {
+            float minDist = 30f;
+            for (int j = 0; j < raysPerSector; j++)
+            {
+                int idx = i * raysPerSector + j;
+                if (idx < lidarData.Length)
+                {
+                    minDist = Mathf.Min(minDist, lidarData[idx].distance);
+                }
+            }
+            sensor.AddObservation(minDist / 30f); // Normalize
+        }
+    }
+
+    public override void OnActionReceived(ActionBuffers actions)
+    {
+        // Apply actions to joints
+        for (int i = 0; i < legJoints.Length; i++)
+        {
+            float targetAngle = actions.ContinuousActions[i] * 60f;
+            ArticulationDrive drive = legJoints[i].xDrive;
+            drive.target = targetAngle;
+            legJoints[i].xDrive = drive;
+        }
+
+        // Calculate rewards
+        float distToTarget = Vector3.Distance(torso.position, target.position);
+        float uprightness = Vector3.Dot(torso.up, Vector3.up);
+
+        // Reward shaping
+        AddReward(-0.001f); // Time penalty
+        AddReward(Mathf.Max(0, 1f - distToTarget / 20f) * 0.01f); // Distance reward
+        AddReward((uprightness - 0.5f) * 0.01f); // Upright reward
+
+        // Terminal conditions
+        if (torso.position.y < 0.3f)
+        {
+            AddReward(-1f);
+            EndEpisode();
+        }
+
+        if (distToTarget < 1.0f)
+        {
+            AddReward(2f);
+            EndEpisode();
+        }
+
+        // Publish to ROS
+        if (publishToROS && Time.frameCount % 10 == 0)
+        {
+            PublishPoseToROS();
+        }
+    }
+
+    void PublishPoseToROS()
+    {
+        var msg = new PoseStampedMsg
+        {
+            header = new RosMessageTypes.Std.HeaderMsg
+            {
+                stamp = new RosMessageTypes.BuiltinInterfaces.TimeMsg
+                {
+                    sec = (int)Time.time,
+                    nanosec = (uint)((Time.time % 1) * 1e9)
+                },
+                frame_id = "world"
+            },
+            pose = new PoseMsg
+            {
+                position = new PointMsg
+                {
+                    x = torso.position.x,
+                    y = torso.position.y,
+                    z = torso.position.z
+                },
+                orientation = new QuaternionMsg
+                {
+                    x = torso.rotation.x,
+                    y = torso.rotation.y,
+                    z = torso.rotation.z,
+                    w = torso.rotation.w
+                }
+            }
+        };
+
+        ros.Publish("/robot/pose", msg);
+    }
+}
+```
+
+## Practice Exercises
+
+### Exercise 1: ROS 2 Integration
+
+**Task:** Create bidirectional communication between Unity and ROS 2
+
+**Requirements:**
+- Import a humanoid URDF into Unity
+- Publish joint states to ROS 2 at 50 Hz
+- Subscribe to velocity commands from ROS 2
+- Publish camera images at 30 Hz
+- Visualize robot in RViz2
+
+### Exercise 2: Synthetic Dataset Generation
+
+**Task:** Generate labeled dataset for object detection
+
+**Requirements:**
+- Create scene with 5 different objects
+- Implement domain randomization (lighting, textures, positions)
+- Use Perception package to generate bounding boxes
+- Generate 10,000 labeled images
+- Export in COCO format
+
+### Exercise 3: RL-Based Balance Control
+
+**Task:** Train humanoid to maintain balance on moving platform
+
+**Requirements:**
+- Implement ML-Agents environment
+- Platform moves sinusoidally
+- Agent controls ankle and hip joints
+- Train for 5M steps with PPO
+- Achieve 80% success rate
+
+## Further Reading
+
+**Official Documentation:**
+- [Unity Robotics Hub](https://github.com/Unity-Technologies/Unity-Robotics-Hub)
+- [ML-Agents Toolkit](https://github.com/Unity-Technologies/ml-agents)
+- [Perception Package](https://github.com/Unity-Technologies/com.unity.perception)
+
+**Tutorials:**
+- [ROS 2 Integration Tutorial](https://github.com/Unity-Technologies/Unity-Robotics-Hub/blob/main/tutorials/ros_unity_integration/README.md)
+- [Object Detection with Synthetic Data](https://github.com/Unity-Technologies/com.unity.perception/blob/main/com.unity.perception/Documentation~/Tutorial/TUTORIAL.md)
+- [Training a Humanoid to Walk](https://github.com/Unity-Technologies/ml-agents/blob/main/docs/Learning-Environment-Examples.md#walker)
+
+**Research Papers:**
+- "Learning Agile and Dynamic Motor Skills for Legged Robots" (Hwangbo et al., 2019)
+- "Sim-to-Real Transfer for Biped Locomotion" (Peng et al., 2020)
+
+## Cross-References
+
+- **Chapter 3**: URDF models imported into Unity
+- **Chapter 9**: Comparing with Gazebo simulation
+- **Chapter 11**: NVIDIA Isaac Sim for even higher fidelity
+- **Chapter 15**: Sim-to-real transfer techniques
+- **Chapter 18**: Advanced RL algorithms
+- **Chapter 20**: Computer vision for humanoid robots
+
+## Next Steps
+
+After mastering Unity for robotics:
+
+1. **Explore NVIDIA Isaac Sim** (Chapter 11) for ray-traced rendering and Isaac Gym
+2. **Study domain randomization** for robust sim-to-real transfer
+3. **Implement advanced RL algorithms** (SAC, TD3) for continuous control
+4. **Create large-scale synthetic datasets** for vision model training
+5. **Integrate with cloud training** (AWS, GCP) for distributed RL
+
+**Recommended Projects:**
+- Full humanoid locomotion with terrain adaptation
+- Vision-based manipulation with synthetic data
+- Multi-agent cooperative tasks
+- Procedural environment generation
+- Real-time visualization for hardware testing
+
+:::tip Next Chapter Preview
+In Chapter 11, we'll explore **NVIDIA Isaac Sim**, the most advanced robotics simulator available. Built on Omniverse, it offers photorealistic ray-traced rendering, physics simulation with PhysX 5, and seamless integration with Isaac Gym for massively parallel RL training. You'll learn when the investment in Isaac Sim pays off compared to Unity and Gazebo.
+:::

@@ -1,0 +1,87 @@
+---
+id: appendix-a-ros2-commands
+title: Appendix A - ROS 2 Command Reference
+description: Comprehensive reference of commonly used ROS 2 CLI commands with examples and explanations.
+sidebar_label: A. ROS 2 Commands
+sidebar_position: 1
+category: commands
+format: table
+keywords: [ROS 2, commands, CLI, reference]
+---
+
+# Appendix A: ROS 2 Command Reference
+
+Quick reference for essential ROS 2 command-line tools and utilities.
+
+## Node Management
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `ros2 node list` | List all active nodes | `ros2 node list` |
+| `ros2 node info /node_name` | Display node information | `ros2 node info /my_robot` |
+| `ros2 run package_name node_name` | Run a node from a package | `ros2 run turtlesim turtlesim_node` |
+
+## Topic Commands
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `ros2 topic list` | List all active topics | `ros2 topic list` |
+| `ros2 topic echo /topic_name` | Display topic messages | `ros2 topic echo /cmd_vel` |
+| `ros2 topic info /topic_name` | Show topic information | `ros2 topic info /scan` |
+| `ros2 topic pub /topic_name msg_type "msg_data"` | Publish to a topic | `ros2 topic pub /cmd_vel geometry_msgs/Twist "{linear: {x: 0.5}}"` |
+| `ros2 topic hz /topic_name` | Display topic publish rate | `ros2 topic hz /camera/image` |
+
+## Service Commands
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `ros2 service list` | List all active services | `ros2 service list` |
+| `ros2 service call /service_name srv_type "request"` | Call a service | `ros2 service call /spawn turtlesim/srv/Spawn "{x: 2.0, y: 2.0}"` |
+| `ros2 service type /service_name` | Show service type | `ros2 service type /clear` |
+
+## Parameter Commands
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `ros2 param list` | List all parameters | `ros2 param list` |
+| `ros2 param get /node_name param_name` | Get parameter value | `ros2 param get /my_robot use_sim_time` |
+| `ros2 param set /node_name param_name value` | Set parameter value | `ros2 param set /my_robot max_speed 2.0` |
+
+## Bag Commands (Recording/Playback)
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `ros2 bag record -a` | Record all topics | `ros2 bag record -a` |
+| `ros2 bag record /topic1 /topic2` | Record specific topics | `ros2 bag record /scan /camera/image` |
+| `ros2 bag play bagfile.db3` | Play back recorded data | `ros2 bag play my_recording.db3` |
+| `ros2 bag info bagfile.db3` | Display bag information | `ros2 bag info my_recording.db3` |
+
+## Launch Commands
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `ros2 launch package_name launch_file.py` | Execute a launch file | `ros2 launch my_robot robot.launch.py` |
+
+## Package/Build Commands
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `colcon build` | Build all packages in workspace | `colcon build` |
+| `colcon build --packages-select pkg_name` | Build specific package | `colcon build --packages-select my_robot` |
+| `source install/setup.bash` | Source workspace overlay | `source install/setup.bash` |
+
+## Diagnostic Commands
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `ros2 doctor` | Check ROS 2 setup | `ros2 doctor` |
+| `ros2 wtf` | Check for common issues | `ros2 wtf` |
+
+## Interface Commands
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `ros2 interface list` | List all message/service types | `ros2 interface list` |
+| `ros2 interface show msg_type` | Show message definition | `ros2 interface show geometry_msgs/msg/Twist` |
+
+[Content to be expanded with more detailed examples and use cases]

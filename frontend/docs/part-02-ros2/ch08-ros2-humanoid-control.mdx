@@ -1,0 +1,1201 @@
+---
+id: ch08-ros2-humanoid-control
+title: Chapter 8 - ROS 2 for Humanoid Control
+description: Apply ROS 2 to humanoid robot control, including joint control, trajectory planning, and sensor integration.
+sidebar_label: Ch 8. ROS 2 Humanoid Control
+sidebar_position: 4
+keywords: [humanoid control, joint control, trajectory planning, sensor integration]
+difficulty: advanced
+estimatedReadingTime: 35
+---
+
+# Chapter 8: ROS 2 for Humanoid Control
+
+## Learning Objectives
+
+By the end of this chapter, you will be able to:
+- Control humanoid robot joints using ROS 2
+- Plan and execute trajectories
+- Integrate sensors for feedback control
+- Implement whole-body control architectures
+
+## Introduction
+
+Humanoid robots represent one of the most challenging applications in robotics, requiring coordination of dozens of joints, integration of multiple sensors, and sophisticated control algorithms. ROS 2 provides a powerful framework for implementing humanoid control systems, from low-level joint control to high-level motion planning.
+
+This chapter brings together everything we've learned about ROS 2 and applies it specifically to humanoid robot control. We'll explore joint control interfaces, trajectory planning and execution, sensor integration for balance and stability, whole-body control architectures, and practical implementation using tools like MoveIt 2 and ros2_control.
+
+By the end of this chapter, you'll understand how to build a complete control stack for a humanoid robot, from hardware interfaces to high-level behaviors.
+
+:::info Key Concepts
+This chapter covers:
+- Joint control interfaces and hardware abstraction
+- Trajectory generation and execution
+- Sensor integration (IMU, force/torque, joint encoders)
+- Whole-body control and balance
+- MoveIt 2 for motion planning
+- Real-time control considerations
+- Complete humanoid control architecture
+:::
+
+## Humanoid Control Architecture Overview
+
+### System Layers
+
+A typical humanoid control system consists of several layers:
+
+```
+┌─────────────────────────────────────┐
+│   High-Level Behaviors & Planning   │  ← Task planning, decision making
+├─────────────────────────────────────┤
+│   Motion Planning (MoveIt 2)        │  ← Collision-free trajectories
+├─────────────────────────────────────┤
+│   Whole-Body Controller             │  ← Joint coordination, balance
+├─────────────────────────────────────┤
+│   Low-Level Joint Controllers       │  ← PID, impedance control
+├─────────────────────────────────────┤
+│   Hardware Interface Layer          │  ← Motor drivers, sensors
+└─────────────────────────────────────┘
+```
+
+### ROS 2 Control Framework (ros2_control)
+
+ROS 2 Control provides a standardized framework for robot control:
+
+- **Hardware Interface**: Abstraction layer for robot hardware
+- **Controller Manager**: Loads and manages controllers
+- **Controllers**: Implement control algorithms
+- **Resource Manager**: Manages access to hardware resources
+
+## Joint Control Interfaces
+
+### Understanding Joint Types
+
+Humanoid robots typically have:
+
+1. **Position-Controlled Joints**: Servos, precise positioning
+2. **Velocity-Controlled Joints**: DC motors with encoders
+3. **Effort-Controlled Joints**: Torque/force control for compliant motion
+
+### Joint State Publisher
+
+First, let's publish joint states from hardware:
+
+```python
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import JointState
+from rclpy.qos import QoSProfile
+import numpy as np
+
+class HumanoidJointStatePublisher(Node):
+    """
+    Publishes joint states for a humanoid robot.
+    In a real system, this reads from hardware encoders.
+    """
+    def __init__(self):
+        super().__init__('joint_state_publisher')
+
+        # Define robot joints
+        self.joint_names = [
+            # Torso
+            'waist_yaw', 'waist_pitch', 'waist_roll',
+            # Right arm
+            'right_shoulder_pitch', 'right_shoulder_roll', 'right_shoulder_yaw',
+            'right_elbow_pitch', 'right_wrist_pitch', 'right_wrist_roll',
+            # Left arm
+            'left_shoulder_pitch', 'left_shoulder_roll', 'left_shoulder_yaw',
+            'left_elbow_pitch', 'left_wrist_pitch', 'left_wrist_roll',
+            # Right leg
+            'right_hip_yaw', 'right_hip_roll', 'right_hip_pitch',
+            'right_knee_pitch', 'right_ankle_pitch', 'right_ankle_roll',
+            # Left leg
+            'left_hip_yaw', 'left_hip_roll', 'left_hip_pitch',
+            'left_knee_pitch', 'left_ankle_pitch', 'left_ankle_roll'
+        ]
+
+        # QoS for sensor data
+        qos = QoSProfile(depth=10)
+
+        # Create publisher
+        self.publisher_ = self.create_publisher(JointState, 'joint_states', qos)
+
+        # Publish at 100 Hz (standard for joint states)
+        self.timer = self.create_timer(0.01, self.publish_joint_states)
+
+        # Simulated joint positions (in real system, read from hardware)
+        self.positions = np.zeros(len(self.joint_names))
+        self.velocities = np.zeros(len(self.joint_names))
+        self.efforts = np.zeros(len(self.joint_names))
+
+        self.get_logger().info(f'Publishing states for {len(self.joint_names)} joints')
+
+    def publish_joint_states(self):
+        """Publish current joint states."""
+        msg = JointState()
+
+        # Header with timestamp
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = ''
+
+        # Joint data
+        msg.name = self.joint_names
+        msg.position = self.positions.tolist()
+        msg.velocity = self.velocities.tolist()
+        msg.effort = self.efforts.tolist()
+
+        self.publisher_.publish(msg)
+
+        # Simulate joint motion (in real system, read from encoders)
+        self.update_simulated_joints()
+
+    def update_simulated_joints(self):
+        """Simulate joint motion for demonstration."""
+        t = self.get_clock().now().nanoseconds * 1e-9
+
+        # Simulate breathing motion in waist
+        self.positions[1] = 0.05 * np.sin(2 * np.pi * 0.2 * t)  # waist_pitch
+
+        # Simulate arm swing during walking
+        self.positions[3] = 0.3 * np.sin(2 * np.pi * 0.5 * t)  # right_shoulder_pitch
+        self.positions[9] = -0.3 * np.sin(2 * np.pi * 0.5 * t)  # left_shoulder_pitch
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = HumanoidJointStatePublisher()
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
+```
+
+### Joint Command Subscriber
+
+Now let's create a subscriber that receives joint commands:
+
+```python
+from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+
+class HumanoidJointController(Node):
+    """
+    Receives joint trajectory commands and executes them.
+    Implements basic trajectory following with interpolation.
+    """
+    def __init__(self):
+        super().__init__('joint_controller')
+
+        # Subscribe to trajectory commands
+        self.subscription = self.create_subscription(
+            JointTrajectory,
+            'joint_trajectory',
+            self.trajectory_callback,
+            10)
+
+        # Current trajectory being executed
+        self.current_trajectory = None
+        self.trajectory_start_time = None
+        self.current_point_index = 0
+
+        # Control loop at 100 Hz
+        self.control_timer = self.create_timer(0.01, self.control_loop)
+
+        # Current joint positions (in real system, from hardware)
+        self.current_positions = {}
+
+        self.get_logger().info('Joint controller ready')
+
+    def trajectory_callback(self, msg):
+        """Receive new trajectory command."""
+        self.get_logger().info(
+            f'Received trajectory with {len(msg.points)} points '
+            f'for {len(msg.joint_names)} joints')
+
+        # Validate trajectory
+        if not self.validate_trajectory(msg):
+            self.get_logger().error('Invalid trajectory, rejecting')
+            return
+
+        # Store trajectory and reset execution state
+        self.current_trajectory = msg
+        self.trajectory_start_time = self.get_clock().now()
+        self.current_point_index = 0
+
+    def validate_trajectory(self, trajectory):
+        """Validate trajectory for safety."""
+        if not trajectory.points:
+            return False
+
+        # Check that all points have consistent joint names
+        expected_joints = len(trajectory.joint_names)
+        for point in trajectory.points:
+            if len(point.positions) != expected_joints:
+                return False
+
+        # Check velocity and acceleration limits
+        for point in trajectory.points:
+            if hasattr(point, 'velocities') and point.velocities:
+                if any(abs(v) > 5.0 for v in point.velocities):  # rad/s limit
+                    self.get_logger().warn('Velocity limit exceeded')
+                    return False
+
+        return True
+
+    def control_loop(self):
+        """Execute trajectory following."""
+        if self.current_trajectory is None:
+            return
+
+        # Calculate elapsed time
+        elapsed = (self.get_clock().now() - self.trajectory_start_time).nanoseconds * 1e-9
+
+        # Find current trajectory point
+        trajectory_point = self.get_trajectory_point(elapsed)
+
+        if trajectory_point is None:
+            # Trajectory complete
+            self.current_trajectory = None
+            return
+
+        # Execute joint commands (in real system, send to hardware)
+        self.execute_joint_commands(
+            self.current_trajectory.joint_names,
+            trajectory_point.positions,
+            trajectory_point.velocities if hasattr(trajectory_point, 'velocities') else None
+        )
+
+    def get_trajectory_point(self, elapsed_time):
+        """Get interpolated trajectory point at current time."""
+        points = self.current_trajectory.points
+
+        # Find surrounding points
+        for i, point in enumerate(points):
+            point_time = point.time_from_start.sec + point.time_from_start.nanosec * 1e-9
+
+            if elapsed_time <= point_time:
+                if i == 0:
+                    return point
+                else:
+                    # Interpolate between points i-1 and i
+                    prev_point = points[i-1]
+                    prev_time = prev_point.time_from_start.sec + prev_point.time_from_start.nanosec * 1e-9
+
+                    alpha = (elapsed_time - prev_time) / (point_time - prev_time)
+                    return self.interpolate_points(prev_point, point, alpha)
+
+        return None  # Trajectory complete
+
+    def interpolate_points(self, p1, p2, alpha):
+        """Linear interpolation between trajectory points."""
+        point = JointTrajectoryPoint()
+
+        # Interpolate positions
+        point.positions = [
+            p1.positions[i] + alpha * (p2.positions[i] - p1.positions[i])
+            for i in range(len(p1.positions))
+        ]
+
+        # Interpolate velocities if available
+        if hasattr(p1, 'velocities') and p1.velocities:
+            point.velocities = [
+                p1.velocities[i] + alpha * (p2.velocities[i] - p1.velocities[i])
+                for i in range(len(p1.velocities))
+            ]
+
+        return point
+
+    def execute_joint_commands(self, joint_names, positions, velocities=None):
+        """Send commands to hardware."""
+        # In real system, this sends commands to motor drivers
+        for i, name in enumerate(joint_names):
+            pos = positions[i]
+            vel = velocities[i] if velocities else 0.0
+
+            # Send to hardware interface
+            # hardware.set_joint_position(name, pos)
+            # hardware.set_joint_velocity(name, vel)
+
+            self.get_logger().debug(
+                f'{name}: pos={pos:.3f} rad, vel={vel:.3f} rad/s',
+                throttle_duration_sec=1.0)
+```
+
+:::tip Hardware Abstraction
+Use ros2_control's hardware interface to abstract away hardware details. This makes your control code portable across different robot platforms.
+:::
+
+## Sensor Integration
+
+### IMU Integration
+
+IMUs (Inertial Measurement Units) are critical for humanoid balance:
+
+```python
+from sensor_msgs.msg import Imu
+import numpy as np
+
+class HumanoidIMUProcessor(Node):
+    """
+    Processes IMU data for humanoid balance control.
+    Estimates orientation and detects falls.
+    """
+    def __init__(self):
+        super().__init__('imu_processor')
+
+        # Subscribe to IMU data
+        self.imu_sub = self.create_subscription(
+            Imu,
+            'imu/data',
+            self.imu_callback,
+            10)
+
+        # Publish processed orientation
+        from geometry_msgs.msg import PoseStamped
+        self.pose_pub = self.create_publisher(PoseStamped, 'body_pose', 10)
+
+        # Fall detection publisher
+        from std_msgs.msg import Bool
+        self.fall_pub = self.create_publisher(Bool, 'fall_detected', 10)
+
+        # Parameters
+        self.declare_parameter('fall_threshold_angle', 30.0)  # degrees
+        self.declare_parameter('fall_threshold_accel', 15.0)  # m/s^2
+
+        self.fall_angle_threshold = np.deg2rad(
+            self.get_parameter('fall_threshold_angle').value)
+        self.fall_accel_threshold = self.get_parameter('fall_threshold_accel').value
+
+        # State
+        self.orientation = [0.0, 0.0, 0.0, 1.0]  # quaternion [x, y, z, w]
+        self.angular_velocity = [0.0, 0.0, 0.0]
+        self.linear_acceleration = [0.0, 0.0, 0.0]
+
+        self.get_logger().info('IMU processor started')
+
+    def imu_callback(self, msg):
+        """Process IMU measurements."""
+        # Extract orientation (quaternion)
+        self.orientation = [
+            msg.orientation.x,
+            msg.orientation.y,
+            msg.orientation.z,
+            msg.orientation.w
+        ]
+
+        # Extract angular velocity
+        self.angular_velocity = [
+            msg.angular_velocity.x,
+            msg.angular_velocity.y,
+            msg.angular_velocity.z
+        ]
+
+        # Extract linear acceleration
+        self.linear_acceleration = [
+            msg.linear_acceleration.x,
+            msg.linear_acceleration.y,
+            msg.linear_acceleration.z
+        ]
+
+        # Compute roll and pitch from quaternion
+        roll, pitch = self.quaternion_to_roll_pitch(self.orientation)
+
+        # Check for fall condition
+        accel_magnitude = np.linalg.norm(self.linear_acceleration)
+
+        if (abs(roll) > self.fall_angle_threshold or
+            abs(pitch) > self.fall_angle_threshold or
+            accel_magnitude > self.fall_accel_threshold):
+
+            self.get_logger().warn(
+                f'Fall detected! Roll: {np.rad2deg(roll):.1f}°, '
+                f'Pitch: {np.rad2deg(pitch):.1f}°, '
+                f'Accel: {accel_magnitude:.1f} m/s²')
+
+            fall_msg = Bool()
+            fall_msg.data = True
+            self.fall_pub.publish(fall_msg)
+
+        # Publish body pose
+        self.publish_body_pose(msg.header, roll, pitch)
+
+    def quaternion_to_roll_pitch(self, q):
+        """Convert quaternion to roll and pitch angles."""
+        # Roll (x-axis rotation)
+        sinr_cosp = 2 * (q[3] * q[0] + q[1] * q[2])
+        cosr_cosp = 1 - 2 * (q[0] * q[0] + q[1] * q[1])
+        roll = np.arctan2(sinr_cosp, cosr_cosp)
+
+        # Pitch (y-axis rotation)
+        sinp = 2 * (q[3] * q[1] - q[2] * q[0])
+        if abs(sinp) >= 1:
+            pitch = np.copysign(np.pi / 2, sinp)  # Use 90 degrees if out of range
+        else:
+            pitch = np.arcsin(sinp)
+
+        return roll, pitch
+
+    def publish_body_pose(self, header, roll, pitch):
+        """Publish body orientation."""
+        from geometry_msgs.msg import PoseStamped
+
+        pose_msg = PoseStamped()
+        pose_msg.header = header
+
+        # Convert roll/pitch back to quaternion for publishing
+        # (simplified - in practice, keep full orientation from IMU)
+        pose_msg.pose.orientation.x = self.orientation[0]
+        pose_msg.pose.orientation.y = self.orientation[1]
+        pose_msg.pose.orientation.z = self.orientation[2]
+        pose_msg.pose.orientation.w = self.orientation[3]
+
+        self.pose_pub.publish(pose_msg)
+```
+
+### Force/Torque Sensor Integration
+
+Force/torque sensors in the feet provide ground contact information:
+
+```python
+from geometry_msgs.msg import WrenchStamped
+
+class FootForceSensor(Node):
+    """
+    Processes force/torque sensors in robot feet.
+    Determines contact state and center of pressure.
+    """
+    def __init__(self):
+        super().__init__('foot_force_sensor')
+
+        # Subscribe to force/torque sensors
+        self.left_foot_sub = self.create_subscription(
+            WrenchStamped,
+            'left_foot/force_torque',
+            lambda msg: self.force_callback(msg, 'left'),
+            10)
+
+        self.right_foot_sub = self.create_subscription(
+            WrenchStamped,
+            'right_foot/force_torque',
+            lambda msg: self.force_callback(msg, 'right'),
+            10)
+
+        # Publish contact states
+        from std_msgs.msg import Bool
+        self.left_contact_pub = self.create_publisher(Bool, 'left_foot_contact', 10)
+        self.right_contact_pub = self.create_publisher(Bool, 'right_foot_contact', 10)
+
+        # Parameters
+        self.declare_parameter('contact_force_threshold', 10.0)  # Newtons
+        self.contact_threshold = self.get_parameter('contact_force_threshold').value
+
+        # State
+        self.left_contact = False
+        self.right_contact = False
+
+        self.get_logger().info('Foot force sensor processor started')
+
+    def force_callback(self, msg, foot):
+        """Process force/torque measurement."""
+        # Extract force
+        force = msg.wrench.force
+        force_magnitude = np.sqrt(force.x**2 + force.y**2 + force.z**2)
+
+        # Determine contact
+        in_contact = force_magnitude > self.contact_threshold
+
+        # Publish contact state
+        contact_msg = Bool()
+        contact_msg.data = in_contact
+
+        if foot == 'left':
+            self.left_contact = in_contact
+            self.left_contact_pub.publish(contact_msg)
+        else:
+            self.right_contact = in_contact
+            self.right_contact_pub.publish(contact_msg)
+
+        # Log contact changes
+        if in_contact:
+            self.get_logger().debug(
+                f'{foot.capitalize()} foot contact: {force_magnitude:.1f} N',
+                throttle_duration_sec=1.0)
+```
+
+## Trajectory Planning and Execution
+
+### Simple Trajectory Generator
+
+Generate smooth trajectories between poses:
+
+```python
+from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+from builtin_interfaces.msg import Duration
+import numpy as np
+
+class TrajectoryGenerator(Node):
+    """
+    Generates smooth joint trajectories using cubic polynomials.
+    """
+    def __init__(self):
+        super().__init__('trajectory_generator')
+
+        # Subscribe to goal poses
+        from sensor_msgs.msg import JointState
+        self.goal_sub = self.create_subscription(
+            JointState,
+            'joint_goal',
+            self.goal_callback,
+            10)
+
+        # Subscribe to current joint states
+        self.state_sub = self.create_subscription(
+            JointState,
+            'joint_states',
+            self.state_callback,
+            10)
+
+        # Publish trajectories
+        self.trajectory_pub = self.create_publisher(
+            JointTrajectory,
+            'joint_trajectory',
+            10)
+
+        # Current state
+        self.current_state = None
+
+        self.get_logger().info('Trajectory generator ready')
+
+    def state_callback(self, msg):
+        """Update current joint state."""
+        self.current_state = msg
+
+    def goal_callback(self, goal):
+        """Generate trajectory to goal."""
+        if self.current_state is None:
+            self.get_logger().warn('No current state available')
+            return
+
+        self.get_logger().info('Generating trajectory to goal')
+
+        # Generate trajectory
+        trajectory = self.generate_trajectory(
+            self.current_state,
+            goal,
+            duration=2.0,  # 2 second trajectory
+            num_points=50   # 50 waypoints
+        )
+
+        self.trajectory_pub.publish(trajectory)
+
+    def generate_trajectory(self, start, goal, duration, num_points):
+        """Generate cubic polynomial trajectory."""
+        trajectory = JointTrajectory()
+        trajectory.joint_names = start.name
+
+        # Time array
+        times = np.linspace(0, duration, num_points)
+
+        for i, t in enumerate(times):
+            point = JointTrajectoryPoint()
+
+            # Normalized time (0 to 1)
+            s = t / duration
+
+            # Cubic polynomial: s(t) = 3t² - 2t³
+            # Ensures smooth start and stop (zero velocity at endpoints)
+            blend = 3 * s**2 - 2 * s**3
+
+            # Interpolate positions
+            point.positions = [
+                start.position[j] + blend * (goal.position[j] - start.position[j])
+                for j in range(len(start.position))
+            ]
+
+            # Compute velocities (derivative of position)
+            ds_dt = (6 * s - 6 * s**2) / duration  # derivative of blend factor
+            point.velocities = [
+                ds_dt * (goal.position[j] - start.position[j])
+                for j in range(len(start.position))
+            ]
+
+            # Set time from start
+            point.time_from_start = Duration(sec=int(t), nanosec=int((t % 1) * 1e9))
+
+            trajectory.points.append(point)
+
+        return trajectory
+```
+
+:::info Trajectory Smoothness
+Cubic polynomials ensure smooth motion with zero velocity at start and end. For more complex requirements, use quintic polynomials or splines.
+:::
+
+## Whole-Body Control Architecture
+
+### Center of Mass Controller
+
+Balance control by managing center of mass:
+
+```python
+from geometry_msgs.msg import Point
+
+class CenterOfMassController(Node):
+    """
+    Controls humanoid balance by managing center of mass position.
+    """
+    def __init__(self):
+        super().__init__('com_controller')
+
+        # Subscribe to body pose (from IMU)
+        from geometry_msgs.msg import PoseStamped
+        self.pose_sub = self.create_subscription(
+            PoseStamped,
+            'body_pose',
+            self.pose_callback,
+            10)
+
+        # Subscribe to foot contacts
+        from std_msgs.msg import Bool
+        self.left_contact_sub = self.create_subscription(
+            Bool,
+            'left_foot_contact',
+            lambda msg: self.contact_callback(msg, 'left'),
+            10)
+        self.right_contact_sub = self.create_subscription(
+            Bool,
+            'right_foot_contact',
+            lambda msg: self.contact_callback(msg, 'right'),
+            10)
+
+        # Publish CoM target
+        self.com_pub = self.create_publisher(Point, 'com_target', 10)
+
+        # Publish joint corrections
+        self.correction_pub = self.create_publisher(
+            JointTrajectory,
+            'balance_correction',
+            10)
+
+        # Control parameters
+        self.declare_parameter('com_kp', 1.0)  # Proportional gain
+        self.declare_parameter('com_kd', 0.5)  # Derivative gain
+
+        self.kp = self.get_parameter('com_kp').value
+        self.kd = self.get_parameter('com_kd').value
+
+        # State
+        self.left_contact = False
+        self.right_contact = False
+        self.body_roll = 0.0
+        self.body_pitch = 0.0
+
+        # Control timer
+        self.control_timer = self.create_timer(0.01, self.control_loop)  # 100 Hz
+
+        self.get_logger().info('CoM controller started')
+
+    def pose_callback(self, msg):
+        """Update body orientation."""
+        # Extract roll and pitch from quaternion
+        q = msg.pose.orientation
+        self.body_roll, self.body_pitch = self.quaternion_to_roll_pitch(
+            [q.x, q.y, q.z, q.w])
+
+    def contact_callback(self, msg, foot):
+        """Update foot contact state."""
+        if foot == 'left':
+            self.left_contact = msg.data
+        else:
+            self.right_contact = msg.data
+
+    def control_loop(self):
+        """Execute balance control."""
+        # Determine support polygon
+        if self.left_contact and self.right_contact:
+            support = 'double'
+        elif self.left_contact:
+            support = 'left'
+        elif self.right_contact:
+            support = 'right'
+        else:
+            support = 'flight'
+            self.get_logger().warn('No foot contact!', throttle_duration_sec=1.0)
+
+        # Compute balance correction
+        correction = self.compute_balance_correction(
+            self.body_roll,
+            self.body_pitch,
+            support)
+
+        if correction is not None:
+            self.correction_pub.publish(correction)
+
+    def compute_balance_correction(self, roll, pitch, support):
+        """Compute joint corrections to maintain balance."""
+        # Simplified balance control
+        # In real system, use full dynamics and optimization
+
+        if abs(roll) < 0.05 and abs(pitch) < 0.05:
+            return None  # Already balanced
+
+        correction = JointTrajectory()
+
+        # Ankle strategy for small disturbances
+        if support == 'double':
+            # Use ankle joints to shift CoM
+            correction.joint_names = [
+                'left_ankle_pitch', 'left_ankle_roll',
+                'right_ankle_pitch', 'right_ankle_roll'
+            ]
+
+            point = JointTrajectoryPoint()
+
+            # Proportional control
+            point.positions = [
+                -self.kp * pitch,   # left ankle pitch
+                -self.kp * roll,    # left ankle roll
+                -self.kp * pitch,   # right ankle pitch
+                -self.kp * roll     # right ankle roll
+            ]
+
+            point.time_from_start = Duration(sec=0, nanosec=int(0.1 * 1e9))
+            correction.points.append(point)
+
+            return correction
+
+        return None
+
+    def quaternion_to_roll_pitch(self, q):
+        """Convert quaternion to roll and pitch."""
+        sinr_cosp = 2 * (q[3] * q[0] + q[1] * q[2])
+        cosr_cosp = 1 - 2 * (q[0] * q[0] + q[1] * q[1])
+        roll = np.arctan2(sinr_cosp, cosr_cosp)
+
+        sinp = 2 * (q[3] * q[1] - q[2] * q[0])
+        if abs(sinp) >= 1:
+            pitch = np.copysign(np.pi / 2, sinp)
+        else:
+            pitch = np.arcsin(sinp)
+
+        return roll, pitch
+```
+
+## MoveIt 2 Integration
+
+### Using MoveIt 2 for Motion Planning
+
+MoveIt 2 provides sophisticated motion planning for humanoid arms:
+
+```python
+from moveit_msgs.msg import MoveGroupActionGoal
+from geometry_msgs.msg import PoseStamped
+
+class HumanoidArmPlanner(Node):
+    """
+    Uses MoveIt 2 for humanoid arm motion planning.
+    """
+    def __init__(self):
+        super().__init__('arm_planner')
+
+        # Publish to MoveIt 2 action interface
+        self.move_group_pub = self.create_publisher(
+            MoveGroupActionGoal,
+            '/move_action/goal',
+            10)
+
+        # Service to trigger planning
+        from std_srvs.srv import Trigger
+        self.plan_service = self.create_service(
+            Trigger,
+            'plan_reach',
+            self.plan_reach_callback)
+
+        self.get_logger().info('Arm planner ready (using MoveIt 2)')
+
+    def plan_reach_callback(self, request, response):
+        """Plan reaching motion."""
+        # Define target pose
+        target = PoseStamped()
+        target.header.frame_id = 'base_link'
+        target.header.stamp = self.get_clock().now().to_msg()
+
+        # Position in front of robot
+        target.pose.position.x = 0.5
+        target.pose.position.y = 0.2
+        target.pose.position.z = 1.0
+
+        # Orientation (pointing forward)
+        target.pose.orientation.w = 1.0
+
+        # Plan and execute
+        success = self.plan_and_execute('right_arm', target)
+
+        response.success = success
+        response.message = 'Planning completed' if success else 'Planning failed'
+
+        return response
+
+    def plan_and_execute(self, group_name, target_pose):
+        """Plan and execute motion to target pose."""
+        self.get_logger().info(f'Planning for {group_name}')
+
+        # In real implementation, use MoveIt 2 Python API:
+        # from moveit_py import MoveIt
+        # moveit = MoveIt(self, group_name)
+        # plan = moveit.plan_to_pose(target_pose)
+        # if plan:
+        #     moveit.execute(plan)
+        #     return True
+        # return False
+
+        # Simplified for demonstration
+        return True
+```
+
+:::tip MoveIt 2 Configuration
+Configure MoveIt 2 with your robot's URDF, collision meshes, and kinematic solver. Use the MoveIt Setup Assistant for initial configuration.
+:::
+
+## Real-Time Control Considerations
+
+### Real-Time Safety
+
+For real-time control, ensure predictable timing:
+
+```python
+import threading
+from rclpy.executors import MultiThreadedExecutor
+from rclpy.callback_groups import ReentrantCallbackGroup
+
+class RealTimeHumanoidController(Node):
+    """
+    Real-time humanoid controller with strict timing requirements.
+    """
+    def __init__(self):
+        super().__init__('rt_controller')
+
+        # Use callback groups for parallel execution
+        self.callback_group = ReentrantCallbackGroup()
+
+        # High-priority control loop
+        self.control_timer = self.create_timer(
+            0.001,  # 1 kHz control loop
+            self.high_frequency_control,
+            callback_group=self.callback_group)
+
+        # Lower-priority monitoring
+        self.monitor_timer = self.create_timer(
+            0.1,  # 10 Hz monitoring
+            self.monitor_system,
+            callback_group=self.callback_group)
+
+        # Thread-safe state
+        self.state_lock = threading.Lock()
+        self.joint_positions = {}
+        self.joint_velocities = {}
+
+        self.get_logger().info('Real-time controller started')
+
+    def high_frequency_control(self):
+        """High-frequency control loop - keep this fast!"""
+        with self.state_lock:
+            # Read current state
+            positions = self.joint_positions.copy()
+
+        # Compute control output (keep under 1ms!)
+        commands = self.compute_control(positions)
+
+        # Send to hardware
+        self.send_commands(commands)
+
+    def compute_control(self, positions):
+        """Compute control commands - must be fast!"""
+        # Implement actual control law here
+        # Example: PID control for each joint
+        commands = {}
+
+        for joint, pos in positions.items():
+            # Simple proportional control
+            target = 0.0  # Replace with actual target
+            error = target - pos
+            command = 10.0 * error  # P gain
+
+            commands[joint] = command
+
+        return commands
+
+    def send_commands(self, commands):
+        """Send commands to hardware - must be fast!"""
+        # Send to actual hardware interface
+        pass
+
+    def monitor_system(self):
+        """Lower-priority system monitoring."""
+        with self.state_lock:
+            num_joints = len(self.joint_positions)
+
+        self.get_logger().info(
+            f'Controlling {num_joints} joints',
+            throttle_duration_sec=5.0)
+```
+
+### Safety Monitoring
+
+Implement safety checks:
+
+```python
+class SafetyMonitor(Node):
+    """
+    Monitors robot state and triggers emergency stop if needed.
+    """
+    def __init__(self):
+        super().__init__('safety_monitor')
+
+        # Subscribe to joint states
+        from sensor_msgs.msg import JointState
+        self.joint_sub = self.create_subscription(
+            JointState,
+            'joint_states',
+            self.check_joint_limits,
+            10)
+
+        # Subscribe to IMU
+        from sensor_msgs.msg import Imu
+        self.imu_sub = self.create_subscription(
+            Imu,
+            'imu/data',
+            self.check_orientation,
+            10)
+
+        # Emergency stop service
+        from std_srvs.srv import Trigger
+        self.estop_client = self.create_client(Trigger, 'emergency_stop')
+
+        # Safety parameters
+        self.declare_parameter('max_joint_velocity', 5.0)  # rad/s
+        self.declare_parameter('max_tilt_angle', 45.0)  # degrees
+
+        self.max_velocity = self.get_parameter('max_joint_velocity').value
+        self.max_tilt = np.deg2rad(self.get_parameter('max_tilt_angle').value)
+
+        self.get_logger().info('Safety monitor active')
+
+    def check_joint_limits(self, msg):
+        """Check if joints are within safe limits."""
+        for i, velocity in enumerate(msg.velocity):
+            if abs(velocity) > self.max_velocity:
+                self.get_logger().error(
+                    f'Joint {msg.name[i]} velocity {velocity:.2f} exceeds limit!')
+                self.trigger_emergency_stop('Joint velocity limit exceeded')
+                return
+
+    def check_orientation(self, msg):
+        """Check if robot orientation is safe."""
+        q = [msg.orientation.x, msg.orientation.y, msg.orientation.z, msg.orientation.w]
+        roll, pitch = self.quaternion_to_roll_pitch(q)
+
+        if abs(roll) > self.max_tilt or abs(pitch) > self.max_tilt:
+            self.get_logger().error(
+                f'Robot tilted beyond safe limit! '
+                f'Roll: {np.rad2deg(roll):.1f}°, Pitch: {np.rad2deg(pitch):.1f}°')
+            self.trigger_emergency_stop('Excessive tilt detected')
+
+    def trigger_emergency_stop(self, reason):
+        """Trigger emergency stop."""
+        self.get_logger().error(f'EMERGENCY STOP: {reason}')
+
+        # Call emergency stop service
+        if self.estop_client.wait_for_service(timeout_sec=0.1):
+            request = Trigger.Request()
+            future = self.estop_client.call_async(request)
+            future.add_done_callback(
+                lambda f: self.get_logger().info('Emergency stop executed'))
+
+    def quaternion_to_roll_pitch(self, q):
+        """Convert quaternion to roll and pitch."""
+        sinr_cosp = 2 * (q[3] * q[0] + q[1] * q[2])
+        cosr_cosp = 1 - 2 * (q[0] * q[0] + q[1] * q[1])
+        roll = np.arctan2(sinr_cosp, cosr_cosp)
+
+        sinp = 2 * (q[3] * q[1] - q[2] * q[0])
+        pitch = np.arcsin(np.clip(sinp, -1.0, 1.0))
+
+        return roll, pitch
+```
+
+## Complete Humanoid Control Example
+
+Let's put it all together in a complete system:
+
+```python
+# complete_humanoid_system.py
+
+class HumanoidControlSystem:
+    """
+    Complete humanoid control system integrating all components.
+    """
+    def __init__(self):
+        rclpy.init()
+
+        # Create all nodes
+        self.joint_state_publisher = HumanoidJointStatePublisher()
+        self.joint_controller = HumanoidJointController()
+        self.imu_processor = HumanoidIMUProcessor()
+        self.foot_sensor = FootForceSensor()
+        self.trajectory_generator = TrajectoryGenerator()
+        self.com_controller = CenterOfMassController()
+        self.safety_monitor = SafetyMonitor()
+
+        # Multi-threaded executor for parallel execution
+        self.executor = MultiThreadedExecutor(num_threads=4)
+
+        # Add all nodes
+        self.executor.add_node(self.joint_state_publisher)
+        self.executor.add_node(self.joint_controller)
+        self.executor.add_node(self.imu_processor)
+        self.executor.add_node(self.foot_sensor)
+        self.executor.add_node(self.trajectory_generator)
+        self.executor.add_node(self.com_controller)
+        self.executor.add_node(self.safety_monitor)
+
+        print("Humanoid control system initialized")
+        print("System components:")
+        print("  - Joint state publisher (100 Hz)")
+        print("  - Joint trajectory controller")
+        print("  - IMU processor with fall detection")
+        print("  - Foot force sensors")
+        print("  - Trajectory generator")
+        print("  - Center of mass controller (100 Hz)")
+        print("  - Safety monitor")
+
+    def run(self):
+        """Run the control system."""
+        try:
+            self.executor.spin()
+        except KeyboardInterrupt:
+            print("\nShutting down humanoid control system...")
+        finally:
+            self.executor.shutdown()
+            rclpy.shutdown()
+
+def main():
+    system = HumanoidControlSystem()
+    system.run()
+
+if __name__ == '__main__':
+    main()
+```
+
+## Best Practices for Humanoid Control
+
+### 1. Modular Design
+
+- Separate concerns: sensing, planning, control, safety
+- Use standard interfaces (JointState, JointTrajectory, etc.)
+- Make components independently testable
+
+### 2. Safety First
+
+- Always implement safety monitors
+- Use hardware emergency stop
+- Validate all commands before execution
+- Implement soft limits before hard limits
+
+### 3. Real-Time Performance
+
+- Keep control loops deterministic
+- Use appropriate QoS settings
+- Profile critical paths
+- Consider using real-time OS for critical components
+
+### 4. Testing Strategy
+
+```python
+# Test in isolation first
+# 1. Test individual joints
+# 2. Test joint groups (arm, leg)
+# 3. Test full-body coordination
+# 4. Test with real-time constraints
+# 5. Test safety systems
+```
+
+## Common Pitfalls
+
+### 1. Ignoring Dynamics
+
+**Problem**: Treating humanoid as a collection of independent joints
+
+**Solution**: Consider whole-body dynamics, especially for balance and walking
+
+### 2. Inadequate Safety
+
+**Problem**: No safety monitoring or emergency stop
+
+**Solution**: Implement multiple safety layers (software and hardware)
+
+### 3. Poor Timing
+
+**Problem**: Non-deterministic control loops
+
+**Solution**: Use real-time executors and profile performance
+
+### 4. Sensor Fusion Neglect
+
+**Problem**: Trusting single sensor sources
+
+**Solution**: Fuse multiple sensors (IMU + encoders + force sensors)
+
+## Practice Exercises
+
+### Exercise 1: Balance Controller
+
+Implement a balance controller that:
+1. Reads IMU data and foot forces
+2. Computes center of pressure
+3. Generates ankle corrections to maintain balance
+4. Handles transitions between single and double support
+
+### Exercise 2: Reaching Motion
+
+Create a system that:
+1. Plans collision-free reaching motions using MoveIt 2
+2. Executes trajectories smoothly
+3. Monitors execution and replans if needed
+4. Handles external disturbances
+
+### Exercise 3: Walk Cycle Generator
+
+Implement a simple walking pattern generator:
+1. Generate foot trajectories for walking
+2. Coordinate leg motions
+3. Shift center of mass appropriately
+4. Maintain balance throughout the cycle
+
+## Further Reading
+
+- [ros2_control Documentation](https://control.ros.org/)
+- [MoveIt 2 Documentation](https://moveit.ros.org/)
+- [Real-Time Linux for ROS 2](https://design.ros2.org/articles/realtime_background.html)
+- Humanoid Robotics: A Reference (Kajita et al.)
+- Modern Robotics (Lynch & Park)
+
+## Cross-References
+
+- **Chapter 6**: ROS 2 core concepts (nodes, topics, services)
+- **Chapter 7**: Communication patterns and QoS
+- **Chapter 4**: Kinematics and dynamics foundations
+- **Chapter 9**: Launch files for complex systems
+- **Chapter 11**: Simulation with Gazebo
+
+## Next Steps
+
+You now have the foundation for building humanoid control systems with ROS 2. Next steps include:
+
+1. Learning about tf2 for coordinate frame management (Chapter 9)
+2. Simulating your control system in Gazebo (Chapter 11)
+3. Implementing advanced behaviors and state machines
+4. Exploring machine learning for adaptive control
+
+In the next chapters, we'll cover launch file management, simulation, and real-world deployment considerations.
+
+:::tip Start Simple
+Begin with simple motions (single joint, single limb) and gradually increase complexity. Test thoroughly at each stage before adding more functionality.
+:::

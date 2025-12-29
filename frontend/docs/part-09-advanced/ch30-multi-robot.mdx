@@ -1,0 +1,1380 @@
+---
+id: ch30-multi-robot
+title: Chapter 30 - Multi-Robot Systems
+description: Coordinate multiple robots for swarm behaviors and collaborative tasks.
+sidebar_label: Ch 30. Multi-Robot Systems
+sidebar_position: 2
+keywords: [multi-robot systems, swarm robotics, coordination, collaboration]
+difficulty: advanced
+estimatedReadingTime: 32
+---
+
+# Chapter 30: Multi-Robot Systems
+
+## Learning Objectives
+
+By the end of this chapter, you will be able to:
+- Design multi-robot coordination algorithms for task allocation and formation control
+- Implement swarm behaviors using distributed consensus and bio-inspired approaches
+- Handle inter-robot communication and fault tolerance in multi-agent systems
+- Apply multi-robot systems to real-world industrial and warehouse applications
+- Evaluate performance metrics for multi-robot coordination
+
+## Introduction to Multi-Robot Systems
+
+Multi-robot systems coordinate multiple autonomous agents to accomplish tasks that are difficult, inefficient, or impossible for a single robot. From warehouse fleets managing thousands of items per hour to humanoid robot swarms collaborating on factory assembly lines, coordinated robotics represents a paradigm shift in automation.
+
+### Why Multi-Robot Systems?
+
+**Task Parallelization**: Multiple robots can work simultaneously on different subtasks, reducing completion time.
+
+**Robustness**: System degrades gracefully as individual robots fail—remaining agents redistribute workload.
+
+**Scalability**: Add more robots to handle increased workload without redesigning the system.
+
+**Spatial Coverage**: Robots can cover large areas (search and rescue, environmental monitoring) or manipulate large objects (collaborative lifting).
+
+### Real-World Impact (2025)
+
+In March 2025, [UBTECH Robotics conducted the world's first multi-humanoid robot collaborative training](https://www.therobotreport.com/top-10-robotics-developments-of-september-2025/) at ZEEKR's 5G Intelligent Factory, showcasing swarm intelligence through multi-task coordination across diverse industrial scenarios. UBTECH's **BrainNet framework** and **Internet of Humanoids (IoH)** control hub enable large-scale collaboration, advanced decision-making, and flexible task execution.
+
+The [global swarm robotics market](https://www.kingsresearch.com/report/swarm-robotics-market-2891) was valued at **$1.19 billion in 2024** and is projected to reach **$7.66 billion by 2032**, driven by warehouse automation, defense applications, and industrial deployments.
+
+### Key Challenges
+
+1. **Communication**: Reliable data exchange in dynamic, cluttered environments with bandwidth constraints
+2. **Consensus**: Agreement on shared state and task allocation despite partial observability
+3. **Collision Avoidance**: Navigating shared spaces without deadlocks or crashes
+4. **Heterogeneity**: Coordinating robots with different capabilities, speeds, and sensor suites
+5. **Scalability**: Algorithms must work efficiently with 10, 100, or 1,000 robots
+
+## Multi-Robot Coordination Architectures
+
+### Centralized Coordination
+
+A single **central controller** receives state from all robots, computes optimal task assignments, and issues commands.
+
+**Advantages**:
+- Optimal or near-optimal solutions (global view)
+- Easier to implement and debug
+- Simple communication topology (star network)
+
+**Disadvantages**:
+- Single point of failure (controller crash = system failure)
+- Communication bottleneck as fleet scales
+- Requires full observability (all robots visible to controller)
+
+**Use Cases**: Small fleets (5-20 robots) in controlled environments, warehouse systems with reliable infrastructure.
+
+### Decentralized Coordination
+
+Each robot makes decisions based on **local information** from neighbors, using distributed consensus algorithms.
+
+**Advantages**:
+- No single point of failure (robust to individual robot failures)
+- Scales to hundreds or thousands of agents
+- Works with partial observability (robots only see neighbors)
+
+**Disadvantages**:
+- Suboptimal solutions (no global view)
+- Complex emergent behaviors (hard to predict)
+- Slower convergence to agreement
+
+**Use Cases**: Large swarms (50+ robots), outdoor/GPS-denied environments, disaster response where infrastructure fails.
+
+### Hybrid Coordination
+
+Combines centralized high-level planning with decentralized low-level execution. A central planner assigns **macro-tasks** (e.g., "robots 1-10 search area A"), then robots use local coordination for collision avoidance and micro-tasks.
+
+**Use Cases**: Most industrial systems, autonomous vehicle fleets, multi-robot manipulation.
+
+## Distributed Task Allocation
+
+### Market-Based Approaches
+
+Robots **bid** on tasks based on their costs (distance, energy, capability), mimicking economic markets.
+
+#### Auction Algorithm (Sequential Single-Item Auction)
+
+```python
+import rclpy
+from rclpy.node import Node
+from geometry_msgs.msg import Point
+from std_msgs.msg import String
+import math
+import json
+
+class AuctionRobot(Node):
+    """Market-based task allocation using sequential auctions"""
+
+    def __init__(self, robot_id, position):
+        super().__init__(f'auction_robot_{robot_id}')
+        self.robot_id = robot_id
+        self.position = position  # (x, y)
+        self.battery = 100.0  # percent
+        self.busy = False
+
+        # Publishers and subscribers
+        self.task_sub = self.create_subscription(
+            String, '/tasks/available', self.task_callback, 10
+        )
+        self.bid_pub = self.create_publisher(String, '/bids', 10)
+        self.award_sub = self.create_subscription(
+            String, '/task_awards', self.award_callback, 10
+        )
+
+        self.get_logger().info(f'Robot {robot_id} ready at {position}')
+
+    def compute_cost(self, task):
+        """Compute cost to complete task (lower is better)"""
+        task_pos = (task['x'], task['y'])
+
+        # Distance cost
+        distance = math.sqrt(
+            (task_pos[0] - self.position[0])**2 +
+            (task_pos[1] - self.position[1])**2
+        )
+
+        # Battery penalty (prioritize high-battery robots)
+        battery_penalty = (100 - self.battery) * 0.1
+
+        # Busy penalty (prefer available robots)
+        busy_penalty = 1000 if self.busy else 0
+
+        total_cost = distance + battery_penalty + busy_penalty
+        return total_cost
+
+    def task_callback(self, msg):
+        """Receive new task announcement and submit bid"""
+        task = json.loads(msg.data)
+
+        # Compute bid (cost to complete task)
+        cost = self.compute_cost(task)
+
+        # Submit bid
+        bid = {
+            'robot_id': self.robot_id,
+            'task_id': task['task_id'],
+            'cost': cost
+        }
+
+        bid_msg = String()
+        bid_msg.data = json.dumps(bid)
+        self.bid_pub.publish(bid_msg)
+
+        self.get_logger().info(f'Bid {cost:.2f} on task {task["task_id"]}')
+
+    def award_callback(self, msg):
+        """Receive task award from auctioneer"""
+        award = json.loads(msg.data)
+
+        if award['robot_id'] == self.robot_id:
+            self.get_logger().info(f'Awarded task {award["task_id"]}!')
+            self.busy = True
+            # Execute task...
+            self.execute_task(award)
+
+class Auctioneer(Node):
+    """Central auctioneer that receives bids and awards tasks"""
+
+    def __init__(self):
+        super().__init__('auctioneer')
+        self.pending_tasks = []
+        self.bids = {}
+
+        # Publishers and subscribers
+        self.task_pub = self.create_publisher(String, '/tasks/available', 10)
+        self.bid_sub = self.create_subscription(
+            String, '/bids', self.bid_callback, 10
+        )
+        self.award_pub = self.create_publisher(String, '/task_awards', 10)
+
+        # Auction timer (collect bids for 2 seconds)
+        self.auction_timer = self.create_timer(2.0, self.award_tasks)
+
+    def announce_task(self, task):
+        """Announce new task to all robots"""
+        msg = String()
+        msg.data = json.dumps(task)
+        self.task_pub.publish(msg)
+
+        self.pending_tasks.append(task['task_id'])
+        self.bids[task['task_id']] = []
+
+    def bid_callback(self, msg):
+        """Collect bids from robots"""
+        bid = json.loads(msg.data)
+        task_id = bid['task_id']
+
+        if task_id in self.bids:
+            self.bids[task_id].append(bid)
+
+    def award_tasks(self):
+        """Award tasks to lowest-cost bidder"""
+        for task_id in self.pending_tasks:
+            if not self.bids[task_id]:
+                continue
+
+            # Select lowest-cost bid
+            winning_bid = min(self.bids[task_id], key=lambda b: b['cost'])
+
+            # Publish award
+            award = {
+                'task_id': task_id,
+                'robot_id': winning_bid['robot_id']
+            }
+
+            msg = String()
+            msg.data = json.dumps(award)
+            self.award_pub.publish(msg)
+
+            self.get_logger().info(
+                f'Task {task_id} awarded to robot {winning_bid["robot_id"]} '
+                f'(cost: {winning_bid["cost"]:.2f})'
+            )
+
+        # Clear completed auctions
+        self.pending_tasks.clear()
+        self.bids.clear()
+```
+
+**Advantages**: Near-optimal solutions, simple to understand, handles heterogeneous robots well.
+
+**Disadvantages**: Communication overhead (all robots bid on all tasks), requires central auctioneer.
+
+**Variants**:
+- **Parallel Auctions**: Multiple tasks auctioned simultaneously
+- **Combinatorial Auctions**: Robots bid on bundles of tasks
+- **Re-allocation**: Robots can trade tasks mid-execution if conditions change
+
+### Distributed Consensus Algorithms
+
+Robots reach **agreement** on task allocation through iterative message passing, without a central authority.
+
+#### Consensus-Based Bundle Algorithm (CBBA)
+
+Each robot independently:
+1. **Bundles tasks** it wants (greedy selection)
+2. **Bids** on tasks based on local utility
+3. **Shares bids** with neighbors
+4. **Updates beliefs** about winning bids
+5. **Repeats** until convergence
+
+```python
+class CBBARobot(Node):
+    """Consensus-Based Bundle Algorithm for distributed task allocation"""
+
+    def __init__(self, robot_id, neighbors):
+        super().__init__(f'cbba_robot_{robot_id}')
+        self.robot_id = robot_id
+        self.neighbors = neighbors  # List of neighbor robot IDs
+
+        # Task bundle and bids
+        self.bundle = []  # Tasks this robot plans to do
+        self.bids = {}    # {task_id: bid_value}
+        self.winning_bids = {}  # {task_id: (robot_id, bid)}
+        self.task_list = []
+
+        # Communication
+        self.bid_pub = self.create_publisher(String, f'/robot_{robot_id}/bids', 10)
+        for neighbor in neighbors:
+            self.create_subscription(
+                String, f'/robot_{neighbor}/bids',
+                lambda msg, n=neighbor: self.neighbor_bid_callback(msg, n), 10
+            )
+
+        # Consensus timer
+        self.create_timer(1.0, self.consensus_iteration)
+
+    def compute_utility(self, task):
+        """Compute utility of adding task to bundle"""
+        # Utility = reward - cost
+        reward = task['priority']
+        cost = self.estimate_path_cost(self.bundle + [task])
+        return reward - cost
+
+    def build_bundle(self):
+        """Greedy bundle construction"""
+        available_tasks = [
+            t for t in self.task_list
+            if t['task_id'] not in [b['task_id'] for b in self.bundle]
+        ]
+
+        for task in available_tasks:
+            utility = self.compute_utility(task)
+
+            # Check if we can outbid current winner
+            current_winner, current_bid = self.winning_bids.get(
+                task['task_id'], (None, 0)
+            )
+
+            if utility > current_bid:
+                # Add to bundle
+                self.bundle.append(task)
+                self.bids[task['task_id']] = utility
+                self.winning_bids[task['task_id']] = (self.robot_id, utility)
+
+    def consensus_iteration(self):
+        """One iteration of CBBA consensus"""
+        # Phase 1: Build bundle (greedy task selection)
+        self.build_bundle()
+
+        # Phase 2: Communicate bids to neighbors
+        self.share_bids()
+
+        # Convergence check
+        if self.check_convergence():
+            self.get_logger().info(f'Converged! Bundle: {self.bundle}')
+
+    def share_bids(self):
+        """Send current bids to all neighbors"""
+        msg = String()
+        msg.data = json.dumps({
+            'robot_id': self.robot_id,
+            'bids': self.bids,
+            'winning_bids': self.winning_bids
+        })
+        self.bid_pub.publish(msg)
+
+    def neighbor_bid_callback(self, msg, neighbor_id):
+        """Update beliefs based on neighbor's bids"""
+        data = json.loads(msg.data)
+        neighbor_bids = data['bids']
+        neighbor_winners = data['winning_bids']
+
+        # Update winning bids
+        for task_id, (winner, bid) in neighbor_winners.items():
+            current_winner, current_bid = self.winning_bids.get(
+                task_id, (None, 0)
+            )
+
+            if bid > current_bid:
+                # Neighbor has better bid
+                self.winning_bids[task_id] = (winner, bid)
+
+                # Remove from our bundle if we thought we won
+                if current_winner == self.robot_id:
+                    self.bundle = [
+                        t for t in self.bundle if t['task_id'] != task_id
+                    ]
+
+    def check_convergence(self):
+        """Check if all robots agree on winning bids"""
+        # In practice, check if winning_bids hasn't changed for N iterations
+        # Simplified here
+        return False
+```
+
+**Advantages**: No single point of failure, scales to large swarms, works with communication delays.
+
+**Disadvantages**: Slower convergence, requires multiple communication rounds, potentially suboptimal.
+
+**Research**: A recent study using [Local Information Aggregation Multi-Agent Deep Deterministic Policy Gradient (LIA_MADDPG)](https://arxiv.org/html/2411.19526) demonstrated dynamic task reallocation in partially observable environments, improving task completion rates by 18% over standard CBBA.
+
+### Swarm Intelligence Approaches
+
+Bio-inspired algorithms use simple local rules to produce complex global behaviors.
+
+#### Ant Colony Optimization (ACO) for Task Allocation
+
+Robots deposit virtual **pheromones** on tasks they complete. Other robots sense pheromone concentrations and probabilistically select tasks with higher pheromones.
+
+```python
+import numpy as np
+
+class ACOTaskAllocator:
+    """Ant Colony Optimization for multi-robot task allocation"""
+
+    def __init__(self, num_robots, num_tasks):
+        self.num_robots = num_robots
+        self.num_tasks = num_tasks
+
+        # Pheromone matrix: pheromones[robot][task]
+        self.pheromones = np.ones((num_robots, num_tasks))
+
+        # Parameters
+        self.alpha = 1.0  # Pheromone importance
+        self.beta = 2.0   # Heuristic importance
+        self.rho = 0.1    # Evaporation rate
+        self.Q = 100      # Pheromone deposit constant
+
+    def heuristic(self, robot_id, task_id, robot_positions, task_positions):
+        """Heuristic value (inverse of distance)"""
+        robot_pos = robot_positions[robot_id]
+        task_pos = task_positions[task_id]
+
+        distance = np.linalg.norm(robot_pos - task_pos)
+        return 1.0 / (distance + 1e-6)
+
+    def select_task(self, robot_id, available_tasks, robot_positions, task_positions):
+        """Probabilistically select task based on pheromones and heuristic"""
+        probabilities = []
+
+        for task_id in available_tasks:
+            pheromone = self.pheromones[robot_id][task_id]
+            heuristic = self.heuristic(
+                robot_id, task_id, robot_positions, task_positions
+            )
+
+            # Probability proportional to pheromone^alpha * heuristic^beta
+            prob = (pheromone ** self.alpha) * (heuristic ** self.beta)
+            probabilities.append(prob)
+
+        # Normalize
+        probabilities = np.array(probabilities)
+        probabilities /= probabilities.sum()
+
+        # Select task
+        selected_idx = np.random.choice(len(available_tasks), p=probabilities)
+        return available_tasks[selected_idx]
+
+    def update_pheromones(self, allocations, costs):
+        """Update pheromones after robots complete tasks"""
+        # Evaporation
+        self.pheromones *= (1 - self.rho)
+
+        # Deposit
+        for robot_id, task_id in allocations:
+            cost = costs[(robot_id, task_id)]
+            deposit = self.Q / cost  # More pheromone for lower cost
+            self.pheromones[robot_id][task_id] += deposit
+
+# Example usage
+allocator = ACOTaskAllocator(num_robots=5, num_tasks=10)
+
+robot_positions = np.random.rand(5, 2) * 10
+task_positions = np.random.rand(10, 2) * 10
+
+for iteration in range(100):
+    allocations = []
+    costs = {}
+    available_tasks = list(range(10))
+
+    for robot_id in range(5):
+        if not available_tasks:
+            break
+
+        task_id = allocator.select_task(
+            robot_id, available_tasks, robot_positions, task_positions
+        )
+
+        allocations.append((robot_id, task_id))
+        available_tasks.remove(task_id)
+
+        # Compute cost (distance)
+        cost = np.linalg.norm(
+            robot_positions[robot_id] - task_positions[task_id]
+        )
+        costs[(robot_id, task_id)] = cost
+
+    # Update pheromones
+    allocator.update_pheromones(allocations, costs)
+
+print(f'Final allocation: {allocations}')
+```
+
+A [2025 study on humanoid soccer swarms](https://www.mdpi.com/1424-8220/25/11/3496) using ACO-based decentralized role allocation achieved **25-40% more goals** than centralized control and static-role teams by dynamically assigning attackers, midfielders, and defenders based on real-time pheromone trails.
+
+## Formation Control
+
+Formation control maintains desired geometric configurations while navigating (e.g., robots moving in a line, triangle, or grid).
+
+### Leader-Follower Formation
+
+One robot (leader) follows a planned path; followers maintain fixed offsets from the leader.
+
+```python
+import numpy as np
+from geometry_msgs.msg import Twist, Pose
+
+class LeaderFollowerController(Node):
+    """Leader-follower formation control"""
+
+    def __init__(self, robot_id, is_leader, leader_offset=None):
+        super().__init__(f'formation_robot_{robot_id}')
+        self.robot_id = robot_id
+        self.is_leader = is_leader
+        self.leader_offset = leader_offset  # (dx, dy) offset from leader
+
+        # State
+        self.pose = Pose()
+        self.leader_pose = Pose()
+
+        # Subscribers
+        self.create_subscription(
+            Pose, f'/robot_{robot_id}/pose', self.pose_callback, 10
+        )
+
+        if not is_leader:
+            # Followers track leader
+            self.create_subscription(
+                Pose, '/leader/pose', self.leader_pose_callback, 10
+            )
+
+        # Publisher
+        self.cmd_pub = self.create_publisher(Twist, f'/robot_{robot_id}/cmd_vel', 10)
+
+        # Control timer
+        self.create_timer(0.1, self.control_loop)
+
+    def pose_callback(self, msg):
+        self.pose = msg
+
+    def leader_pose_callback(self, msg):
+        self.leader_pose = msg
+
+    def control_loop(self):
+        """Compute control commands"""
+        if self.is_leader:
+            # Leader follows pre-planned trajectory
+            cmd = self.compute_leader_control()
+        else:
+            # Follower maintains offset from leader
+            cmd = self.compute_follower_control()
+
+        self.cmd_pub.publish(cmd)
+
+    def compute_follower_control(self):
+        """Maintain desired offset from leader"""
+        # Desired position: leader position + offset
+        leader_x = self.leader_pose.position.x
+        leader_y = self.leader_pose.position.y
+        leader_theta = self.get_yaw(self.leader_pose.orientation)
+
+        # Rotate offset by leader's heading
+        dx, dy = self.leader_offset
+        desired_x = leader_x + dx * np.cos(leader_theta) - dy * np.sin(leader_theta)
+        desired_y = leader_y + dx * np.sin(leader_theta) + dy * np.cos(leader_theta)
+
+        # Current position
+        x = self.pose.position.x
+        y = self.pose.position.y
+        theta = self.get_yaw(self.pose.orientation)
+
+        # Proportional control
+        error_x = desired_x - x
+        error_y = desired_y - y
+
+        # Transform to robot frame
+        error_distance = np.sqrt(error_x**2 + error_y**2)
+        error_angle = np.arctan2(error_y, error_x) - theta
+
+        # Control gains
+        k_linear = 0.5
+        k_angular = 1.0
+
+        cmd = Twist()
+        cmd.linear.x = k_linear * error_distance
+        cmd.angular.z = k_angular * error_angle
+
+        return cmd
+
+    def get_yaw(self, orientation):
+        """Extract yaw from quaternion"""
+        # Simplified for clarity
+        return 2 * np.arctan2(orientation.z, orientation.w)
+```
+
+**Advantages**: Simple to implement, low communication (only leader broadcasts).
+
+**Disadvantages**: Single point of failure (leader failure = formation collapse), rigid structure.
+
+### Consensus-Based Formation
+
+All robots exchange state and converge to desired formation through distributed consensus.
+
+```python
+class ConsensusFormationController(Node):
+    """Consensus-based formation control"""
+
+    def __init__(self, robot_id, neighbors, desired_formation):
+        super().__init__(f'consensus_robot_{robot_id}')
+        self.robot_id = robot_id
+        self.neighbors = neighbors  # List of neighbor IDs
+        self.desired_formation = desired_formation  # {robot_id: (x, y)}
+
+        # State
+        self.pose = np.array([0.0, 0.0])
+        self.neighbor_poses = {n: np.array([0.0, 0.0]) for n in neighbors}
+
+        # Communication
+        self.pose_pub = self.create_publisher(
+            Pose, f'/robot_{robot_id}/pose', 10
+        )
+
+        for neighbor in neighbors:
+            self.create_subscription(
+                Pose, f'/robot_{neighbor}/pose',
+                lambda msg, n=neighbor: self.neighbor_callback(msg, n), 10
+            )
+
+        # Control
+        self.cmd_pub = self.create_publisher(Twist, f'/robot_{robot_id}/cmd_vel', 10)
+        self.create_timer(0.1, self.consensus_control)
+
+    def neighbor_callback(self, msg, neighbor_id):
+        """Update neighbor position"""
+        self.neighbor_poses[neighbor_id] = np.array([
+            msg.position.x, msg.position.y
+        ])
+
+    def consensus_control(self):
+        """Consensus-based formation control"""
+        # Desired relative positions
+        my_desired = self.desired_formation[self.robot_id]
+
+        # Consensus term: move toward average of neighbors
+        consensus = np.zeros(2)
+        for neighbor_id, neighbor_pose in self.neighbor_poses.items():
+            neighbor_desired = self.desired_formation[neighbor_id]
+
+            # Relative position error
+            relative_error = (neighbor_pose - self.pose) - (neighbor_desired - my_desired)
+            consensus += relative_error
+
+        consensus /= len(self.neighbors)
+
+        # Control command
+        k = 0.5  # Consensus gain
+        velocity = k * consensus
+
+        cmd = Twist()
+        cmd.linear.x = velocity[0]
+        cmd.linear.y = velocity[1]
+        self.cmd_pub.publish(cmd)
+```
+
+**Research**: [Distributed consensus protocols for swarm robotics](https://www.acejournal.org/robotics/distributed%20systems/2025/06/21/swarm-coordination-via-distributed-consensus) demonstrated resilience to communication failures, with formations converging despite 20% packet loss.
+
+## Multi-Robot Communication
+
+### Communication Topologies
+
+**Fully Connected**: Every robot communicates with every other robot.
+- **Bandwidth**: O(n²) messages
+- **Latency**: Low (direct communication)
+- **Use Case**: Small fleets (&lt;10 robots)
+
+**Star Topology**: All robots communicate through central hub.
+- **Bandwidth**: O(n) messages
+- **Latency**: Low
+- **Fault Tolerance**: Single point of failure
+- **Use Case**: Centralized warehouse systems
+
+**Mesh Network**: Each robot communicates with nearby neighbors.
+- **Bandwidth**: O(n·k) messages (k = average neighbors)
+- **Latency**: Higher (multi-hop routing)
+- **Fault Tolerance**: High
+- **Use Case**: Large swarms, GPS-denied environments
+
+### Message Passing with DDS
+
+ROS 2 uses **Data Distribution Service (DDS)** for reliable, real-time communication.
+
+```python
+from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
+
+class MultiRobotCommunicator(Node):
+    """Multi-robot communication with DDS QoS policies"""
+
+    def __init__(self, robot_id):
+        super().__init__(f'communicator_{robot_id}')
+        self.robot_id = robot_id
+
+        # QoS profile for robot state (best-effort, latest only)
+        state_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+            depth=1
+        )
+
+        # QoS profile for task assignments (reliable, persistent)
+        task_qos = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            depth=10
+        )
+
+        # State publisher (high-frequency, lossy OK)
+        self.state_pub = self.create_publisher(
+            Pose, f'/robot_{robot_id}/state', state_qos
+        )
+
+        # Task subscriber (low-frequency, must receive)
+        self.task_sub = self.create_subscription(
+            String, f'/robot_{robot_id}/tasks',
+            self.task_callback, task_qos
+        )
+
+    def task_callback(self, msg):
+        """Receive task assignment (guaranteed delivery)"""
+        self.get_logger().info(f'Received task: {msg.data}')
+```
+
+### Fault Tolerance
+
+Robots must handle communication failures gracefully.
+
+```python
+class FaultTolerantCoordinator(Node):
+    """Detect and handle robot failures"""
+
+    def __init__(self, robot_id, neighbors):
+        super().__init__(f'fault_tolerant_{robot_id}')
+        self.robot_id = robot_id
+        self.neighbors = neighbors
+
+        # Heartbeat tracking
+        self.last_heartbeat = {n: self.get_clock().now() for n in neighbors}
+        self.timeout = 5.0  # seconds
+
+        # Subscribe to neighbor heartbeats
+        for neighbor in neighbors:
+            self.create_subscription(
+                String, f'/robot_{neighbor}/heartbeat',
+                lambda msg, n=neighbor: self.heartbeat_callback(msg, n), 10
+            )
+
+        # Publish own heartbeat
+        self.heartbeat_pub = self.create_publisher(
+            String, f'/robot_{robot_id}/heartbeat', 10
+        )
+        self.create_timer(1.0, self.publish_heartbeat)
+
+        # Check for failures
+        self.create_timer(2.0, self.check_failures)
+
+    def heartbeat_callback(self, msg, neighbor_id):
+        """Update last heartbeat time"""
+        self.last_heartbeat[neighbor_id] = self.get_clock().now()
+
+    def publish_heartbeat(self):
+        """Broadcast alive status"""
+        msg = String()
+        msg.data = f'{self.robot_id}:alive'
+        self.heartbeat_pub.publish(msg)
+
+    def check_failures(self):
+        """Detect failed neighbors"""
+        now = self.get_clock().now()
+
+        for neighbor, last_time in self.last_heartbeat.items():
+            time_since_heartbeat = (now - last_time).nanoseconds / 1e9
+
+            if time_since_heartbeat > self.timeout:
+                self.get_logger().warn(f'Robot {neighbor} failed!')
+                self.handle_failure(neighbor)
+
+    def handle_failure(self, failed_robot):
+        """Redistribute tasks from failed robot"""
+        # Example: re-run task allocation without failed robot
+        self.neighbors.remove(failed_robot)
+        # Re-allocate tasks...
+```
+
+## Fleet Management Systems
+
+Modern warehouse and factory systems coordinate **hundreds of robots** simultaneously.
+
+### Deep Reinforcement Learning for Fleet Management
+
+A [2024 study](https://www.mdpi.com/2227-9717/12/12/2921) developed a Deep Q-Network (DQN)-based fleet management system that dynamically selects optimal robots for each task based on path efficiency and safety metrics.
+
+```python
+import torch
+import torch.nn as nn
+import numpy as np
+
+class FleetManagerDQN(nn.Module):
+    """DQN for fleet task allocation"""
+
+    def __init__(self, state_dim, num_robots):
+        super().__init__()
+        self.fc1 = nn.Linear(state_dim, 128)
+        self.fc2 = nn.Linear(128, 128)
+        self.fc3 = nn.Linear(128, num_robots)  # Q-value for each robot
+
+    def forward(self, state):
+        x = torch.relu(self.fc1(state))
+        x = torch.relu(self.fc2(x))
+        q_values = self.fc3(x)
+        return q_values
+
+class FleetManager:
+    """RL-based fleet management system"""
+
+    def __init__(self, num_robots):
+        self.num_robots = num_robots
+
+        # State: [task_position, task_priority, robot_positions, robot_battery]
+        state_dim = 2 + 1 + num_robots * 3
+
+        self.q_network = FleetManagerDQN(state_dim, num_robots)
+        self.optimizer = torch.optim.Adam(self.q_network.parameters(), lr=0.001)
+        self.gamma = 0.99  # Discount factor
+
+        # Experience replay
+        self.replay_buffer = []
+        self.batch_size = 32
+
+    def get_state(self, task, robots):
+        """Construct state vector"""
+        state = []
+
+        # Task features
+        state.extend([task['x'], task['y']])
+        state.append(task['priority'])
+
+        # Robot features
+        for robot in robots:
+            state.extend([robot['x'], robot['y'], robot['battery']])
+
+        return torch.tensor(state, dtype=torch.float32)
+
+    def select_robot(self, task, robots, epsilon=0.1):
+        """Select robot for task (epsilon-greedy)"""
+        state = self.get_state(task, robots)
+
+        if np.random.rand() < epsilon:
+            # Explore: random robot
+            return np.random.randint(self.num_robots)
+        else:
+            # Exploit: best robot according to Q-network
+            with torch.no_grad():
+                q_values = self.q_network(state)
+                return q_values.argmax().item()
+
+    def train_step(self):
+        """Train Q-network on batch from replay buffer"""
+        if len(self.replay_buffer) < self.batch_size:
+            return
+
+        # Sample batch
+        batch = np.random.choice(self.replay_buffer, self.batch_size, replace=False)
+
+        states = torch.stack([b[0] for b in batch])
+        actions = torch.tensor([b[1] for b in batch])
+        rewards = torch.tensor([b[2] for b in batch])
+        next_states = torch.stack([b[3] for b in batch])
+        dones = torch.tensor([b[4] for b in batch])
+
+        # Compute Q-values
+        q_values = self.q_network(states).gather(1, actions.unsqueeze(1)).squeeze(1)
+
+        # Compute target Q-values
+        with torch.no_grad():
+            next_q_values = self.q_network(next_states).max(1)[0]
+            target_q_values = rewards + self.gamma * next_q_values * (1 - dones)
+
+        # Loss and backprop
+        loss = nn.functional.mse_loss(q_values, target_q_values)
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+
+        return loss.item()
+
+# Example usage
+manager = FleetManager(num_robots=10)
+
+robots = [
+    {'x': np.random.rand() * 100, 'y': np.random.rand() * 100, 'battery': 80 + np.random.rand() * 20}
+    for _ in range(10)
+]
+
+task = {'x': 50, 'y': 50, 'priority': 0.8}
+
+selected_robot = manager.select_robot(task, robots)
+print(f'Assigned task to robot {selected_robot}')
+```
+
+**Results**: DQN-based systems reduce average task completion time by **15-22%** compared to nearest-robot heuristics in simulated warehouses with 50+ robots.
+
+### Real-World Fleet Management: UBTECH's BrainNet
+
+UBTECH's **Internet of Humanoids (IoH)** platform manages fleets of humanoid robots in industrial settings:
+
+- **BrainNet Framework**: Cloud-based coordination engine
+- **5G Connectivity**: Low-latency communication (10-20ms)
+- **Digital Twin Integration**: Real-time simulation of factory floor
+- **Dynamic Task Reallocation**: Robots trade tasks based on battery, position, and workload
+- **Multi-Task Coordination**: Simultaneous assembly, inspection, and material handling
+
+In the [ZEEKR 5G Intelligent Factory](https://www.therobotreport.com/top-10-robotics-developments-of-september-2025/) deployment, 12 humanoid robots achieved **94% task completion rate** with **zero collisions** over a 4-week trial.
+
+## Swarm Robotics
+
+Swarm robotics uses **large numbers** (50-1,000+) of simple robots coordinated through local interactions.
+
+### Collective Behaviors
+
+#### Aggregation
+
+Robots form clusters around features of interest (e.g., targets, resources).
+
+```python
+class SwarmAggregationRobot(Node):
+    """Simple aggregation behavior"""
+
+    def __init__(self, robot_id):
+        super().__init__(f'swarm_robot_{robot_id}')
+        self.robot_id = robot_id
+
+        # Sensors
+        self.neighbor_positions = []
+        self.target_detected = False
+
+        # Actuators
+        self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
+
+        # Control
+        self.create_timer(0.1, self.aggregate_behavior)
+
+    def aggregate_behavior(self):
+        """Move toward neighbors and targets"""
+        cmd = Twist()
+
+        if self.target_detected:
+            # Stop at target
+            cmd.linear.x = 0.0
+        elif self.neighbor_positions:
+            # Move toward center of neighboring swarm
+            center = np.mean(self.neighbor_positions, axis=0)
+            direction = center - self.get_position()
+
+            # Move with random noise (avoid local minima)
+            noise = np.random.randn(2) * 0.1
+            direction += noise
+
+            cmd.linear.x = 0.3
+            cmd.angular.z = np.arctan2(direction[1], direction[0])
+        else:
+            # Random walk until neighbors found
+            cmd.linear.x = 0.2
+            cmd.angular.z = np.random.randn() * 0.5
+
+        self.cmd_pub.publish(cmd)
+```
+
+#### Dispersion
+
+Robots spread out to maximize coverage.
+
+```python
+class SwarmDispersionRobot(Node):
+    """Maximize distance from neighbors"""
+
+    def __init__(self, robot_id):
+        super().__init__(f'dispersion_robot_{robot_id}')
+        self.neighbor_positions = []
+        self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
+        self.create_timer(0.1, self.dispersion_behavior)
+
+    def dispersion_behavior(self):
+        """Move away from neighbors"""
+        cmd = Twist()
+
+        if not self.neighbor_positions:
+            # Random walk
+            cmd.linear.x = 0.2
+            cmd.angular.z = np.random.randn() * 0.3
+        else:
+            # Compute repulsion force from neighbors
+            repulsion = np.zeros(2)
+            for neighbor_pos in self.neighbor_positions:
+                diff = self.get_position() - neighbor_pos
+                distance = np.linalg.norm(diff)
+
+                if distance < 2.0:  # Repulsion threshold
+                    repulsion += diff / (distance ** 2)
+
+            # Move in repulsion direction
+            if np.linalg.norm(repulsion) > 0:
+                repulsion /= np.linalg.norm(repulsion)
+                cmd.linear.x = 0.3
+                cmd.angular.z = np.arctan2(repulsion[1], repulsion[0])
+
+        self.cmd_pub.publish(cmd)
+```
+
+#### Flocking (Boids Algorithm)
+
+Combine three rules: **separation** (avoid crowding), **alignment** (match neighbors' velocity), **cohesion** (move toward center of neighbors).
+
+```python
+class FlockingRobot(Node):
+    """Reynolds' Boids flocking algorithm"""
+
+    def __init__(self, robot_id):
+        super().__init__(f'flock_robot_{robot_id}')
+        self.position = np.array([0.0, 0.0])
+        self.velocity = np.array([0.1, 0.0])
+        self.neighbor_positions = []
+        self.neighbor_velocities = []
+
+        # Behavior weights
+        self.w_separation = 1.5
+        self.w_alignment = 1.0
+        self.w_cohesion = 1.0
+
+        self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
+        self.create_timer(0.1, self.flock)
+
+    def flock(self):
+        """Compute flocking behavior"""
+        if not self.neighbor_positions:
+            # No neighbors, continue current velocity
+            cmd = Twist()
+            cmd.linear.x = 0.3
+            self.cmd_pub.publish(cmd)
+            return
+
+        # Rule 1: Separation (avoid crowding)
+        separation = np.zeros(2)
+        for neighbor_pos in self.neighbor_positions:
+            diff = self.position - neighbor_pos
+            distance = np.linalg.norm(diff)
+
+            if distance < 1.0:  # Separation threshold
+                separation += diff / (distance + 1e-6)
+
+        # Rule 2: Alignment (match neighbors' velocity)
+        alignment = np.mean(self.neighbor_velocities, axis=0) - self.velocity
+
+        # Rule 3: Cohesion (move toward center of neighbors)
+        center = np.mean(self.neighbor_positions, axis=0)
+        cohesion = center - self.position
+
+        # Combine rules
+        acceleration = (
+            self.w_separation * separation +
+            self.w_alignment * alignment +
+            self.w_cohesion * cohesion
+        )
+
+        # Update velocity
+        self.velocity += acceleration * 0.1
+
+        # Limit speed
+        speed = np.linalg.norm(self.velocity)
+        if speed > 0.5:
+            self.velocity = self.velocity / speed * 0.5
+
+        # Publish command
+        cmd = Twist()
+        cmd.linear.x = speed
+        cmd.angular.z = np.arctan2(self.velocity[1], self.velocity[0])
+        self.cmd_pub.publish(cmd)
+```
+
+**Applications**: UAV swarms for search and rescue, underwater robot swarms for ocean monitoring, [warehouse robot fleets](https://axidio.com/blog/swarm-robotics-in-warehousing-in-scm-2025) for inventory management.
+
+## Multi-Robot SLAM
+
+Multiple robots collaboratively build a map and localize themselves.
+
+### Centralized Multi-Robot SLAM
+
+Robots send observations to central server, which maintains global map.
+
+```python
+from nav_msgs.msg import OccupancyGrid
+from sensor_msgs.msg import LaserScan
+
+class CentralizedSLAMServer(Node):
+    """Centralized multi-robot SLAM"""
+
+    def __init__(self, num_robots):
+        super().__init__('central_slam')
+        self.num_robots = num_robots
+
+        # Global map
+        self.map = OccupancyGrid()
+        self.map.info.resolution = 0.05  # meters per cell
+        self.map.info.width = 400
+        self.map.info.height = 400
+        self.map.data = [-1] * (400 * 400)  # Unknown
+
+        # Robot poses
+        self.robot_poses = {}
+
+        # Subscribe to robot observations
+        for robot_id in range(num_robots):
+            self.create_subscription(
+                LaserScan, f'/robot_{robot_id}/scan',
+                lambda msg, rid=robot_id: self.scan_callback(msg, rid), 10
+            )
+
+            self.create_subscription(
+                Pose, f'/robot_{robot_id}/pose',
+                lambda msg, rid=robot_id: self.pose_callback(msg, rid), 10
+            )
+
+        # Publish global map
+        self.map_pub = self.create_publisher(OccupancyGrid, '/global_map', 10)
+        self.create_timer(1.0, self.publish_map)
+
+    def pose_callback(self, msg, robot_id):
+        """Update robot pose"""
+        self.robot_poses[robot_id] = msg
+
+    def scan_callback(self, msg, robot_id):
+        """Integrate laser scan into global map"""
+        if robot_id not in self.robot_poses:
+            return
+
+        robot_pose = self.robot_poses[robot_id]
+
+        # For each laser ray, mark cells as occupied/free
+        for i, range_val in enumerate(msg.ranges):
+            if range_val < msg.range_min or range_val > msg.range_max:
+                continue
+
+            angle = msg.angle_min + i * msg.angle_increment
+
+            # World coordinates of obstacle
+            obstacle_x = robot_pose.position.x + range_val * np.cos(angle)
+            obstacle_y = robot_pose.position.y + range_val * np.sin(angle)
+
+            # Update map cell
+            self.update_cell(obstacle_x, obstacle_y, occupied=True)
+
+    def update_cell(self, x, y, occupied):
+        """Update occupancy grid cell"""
+        # Convert to grid coordinates
+        grid_x = int((x - self.map.info.origin.position.x) / self.map.info.resolution)
+        grid_y = int((y - self.map.info.origin.position.y) / self.map.info.resolution)
+
+        if 0 <= grid_x < self.map.info.width and 0 <= grid_y < self.map.info.height:
+            idx = grid_y * self.map.info.width + grid_x
+            self.map.data[idx] = 100 if occupied else 0
+
+    def publish_map(self):
+        """Publish global map"""
+        self.map_pub.publish(self.map)
+```
+
+### Decentralized Multi-Robot SLAM
+
+Each robot maintains local map and exchanges information with neighbors.
+
+```python
+class DecentralizedSLAMRobot(Node):
+    """Decentralized multi-robot SLAM with map sharing"""
+
+    def __init__(self, robot_id, neighbors):
+        super().__init__(f'slam_robot_{robot_id}')
+        self.robot_id = robot_id
+        self.neighbors = neighbors
+
+        # Local map
+        self.local_map = OccupancyGrid()
+        # Initialize local map...
+
+        # Subscribe to neighbor maps
+        for neighbor in neighbors:
+            self.create_subscription(
+                OccupancyGrid, f'/robot_{neighbor}/local_map',
+                lambda msg, n=neighbor: self.merge_map(msg, n), 10
+            )
+
+        # Publish local map
+        self.map_pub = self.create_publisher(
+            OccupancyGrid, f'/robot_{robot_id}/local_map', 10
+        )
+        self.create_timer(2.0, self.publish_local_map)
+
+    def merge_map(self, neighbor_map, neighbor_id):
+        """Merge neighbor's map into local map"""
+        # Align maps (solve relative transformation)
+        # Merge occupancy grids (max pooling or probabilistic)
+        pass
+
+    def publish_local_map(self):
+        """Share local map with neighbors"""
+        self.map_pub.publish(self.local_map)
+```
+
+**Research**: A 2025 study on [efficient multi-robot path planning](https://link.springer.com/article/10.1007/s41315-024-00378-3) in real environments demonstrated centralized coordination reduced planning time by 35% compared to fully decentralized approaches, at the cost of higher communication bandwidth.
+
+## Performance Metrics
+
+### Task Completion Time
+
+Average time from task arrival to completion.
+
+```python
+class PerformanceMonitor(Node):
+    """Track multi-robot system performance"""
+
+    def __init__(self):
+        super().__init__('performance_monitor')
+        self.task_start_times = {}
+        self.task_completion_times = []
+
+        self.create_subscription(String, '/tasks/new', self.task_start_callback, 10)
+        self.create_subscription(String, '/tasks/completed', self.task_complete_callback, 10)
+
+    def task_start_callback(self, msg):
+        task_id = msg.data
+        self.task_start_times[task_id] = self.get_clock().now()
+
+    def task_complete_callback(self, msg):
+        task_id = msg.data
+
+        if task_id in self.task_start_times:
+            completion_time = (
+                self.get_clock().now() - self.task_start_times[task_id]
+            ).nanoseconds / 1e9
+
+            self.task_completion_times.append(completion_time)
+
+            self.get_logger().info(f'Task {task_id} completed in {completion_time:.2f}s')
+
+    def get_average_completion_time(self):
+        return np.mean(self.task_completion_times)
+```
+
+### Makespan
+
+Time from first task start to last task completion (measures parallelism).
+
+### Robot Utilization
+
+Percentage of time robots spend actively working (vs. idle or traveling).
+
+```python
+class UtilizationTracker(Node):
+    """Track robot utilization"""
+
+    def __init__(self, robot_id):
+        super().__init__(f'utilization_tracker_{robot_id}')
+        self.robot_id = robot_id
+
+        self.state = 'idle'  # idle, traveling, working
+        self.state_durations = {'idle': 0, 'traveling': 0, 'working': 0}
+        self.last_state_change = self.get_clock().now()
+
+        self.create_subscription(String, f'/robot_{robot_id}/state', self.state_callback, 10)
+
+    def state_callback(self, msg):
+        """Update state and track duration"""
+        now = self.get_clock().now()
+        duration = (now - self.last_state_change).nanoseconds / 1e9
+
+        self.state_durations[self.state] += duration
+
+        self.state = msg.data
+        self.last_state_change = now
+
+    def get_utilization(self):
+        """Compute utilization (working time / total time)"""
+        total_time = sum(self.state_durations.values())
+        if total_time == 0:
+            return 0.0
+
+        return self.state_durations['working'] / total_time
+```
+
+### Communication Overhead
+
+Total messages sent per task completed.
+
+### Scalability
+
+How metrics degrade as number of robots increases. Ideal algorithms maintain constant or logarithmic overhead.
+
+## Challenges and Future Directions
+
+### Current Limitations
+
+1. **Heterogeneous Fleets**: Most algorithms assume homogeneous robots; coordinating humanoids, quadrupeds, and drones simultaneously remains challenging.
+
+2. **Long-Horizon Planning**: Swarm behaviors excel at reactive tasks but struggle with multi-step plans (e.g., "assemble a complex product").
+
+3. **Human-Swarm Interaction**: Operators need intuitive interfaces to supervise and guide 100+ robots.
+
+4. **Safety Certification**: Verifying safety properties of emergent swarm behaviors is an open problem.
+
+### Emerging Trends (2025)
+
+**Foundation Models for Multi-Robot Coordination**: Researchers are exploring large language models (LLMs) as high-level planners that decompose tasks for robot teams and synthesize coordination strategies.
+
+**Digital Twin Integration**: Real-time simulation mirrors physical robot fleet, enabling "what-if" analysis and predictive maintenance.
+
+**5G/6G Connectivity**: Ultra-low latency (&lt;10ms) enables tighter coordination loops and cloud-based fleet control.
+
+**Self-Organizing Nervous Systems**: A [2025 study in *Science Robotics*](https://www.science.org/doi/10.1126/scirobotics.adl5161) demonstrated swarm robots forming decentralized "nervous systems" that distribute computation and decision-making across the swarm, improving fault tolerance.
+
+### Research Directions
+
+- **Multi-Objective Optimization**: Balance conflicting goals (speed vs. energy, makespan vs. fairness)
+- **Lifelong Multi-Robot Learning**: Swarms that improve coordination policies over months/years
+- **Physics-Informed Coordination**: Incorporate dynamics constraints into task allocation (e.g., assign heavy lifting to stronger robots)
+
+## Chapter Summary
+
+Multi-robot systems enable task parallelization, robustness, and scalability through coordinated fleets. Key concepts:
+
+- **Coordination Architectures**: Centralized (optimal, fragile), decentralized (robust, suboptimal), hybrid (practical)
+- **Task Allocation**: Market-based auctions, consensus algorithms (CBBA), swarm intelligence (ACO)
+- **Formation Control**: Leader-follower (simple), consensus-based (robust)
+- **Communication**: DDS/ROS 2, fault tolerance, mesh networks
+- **Fleet Management**: DQN-based allocation, UBTECH's BrainNet (5G, digital twins)
+- **Swarm Robotics**: Aggregation, dispersion, flocking (Boids), multi-robot SLAM
+
+**2025 Market**: Swarm robotics market $1.19B→$7.66B (2032), driven by warehouse automation and industrial deployments.
+
+**Real-World Success**: UBTECH's 12-humanoid deployment at ZEEKR factory achieved 94% task completion with zero collisions.
+
+## Exercises
+
+### Conceptual Questions
+
+1. **Centralized vs. Decentralized**: Compare centralized and decentralized task allocation for a fleet of 50 delivery robots. Which architecture would you choose for (a) indoor warehouse, (b) outdoor last-mile delivery? Justify your answer.
+
+2. **Auction Dynamics**: In a market-based auction, Robot A bids $10 for Task 1, Robot B bids $15. Why might you award the task to Robot B despite higher cost? (Hint: Consider global optimality.)
+
+3. **Formation Control**: A leader-follower formation has 5 robots. The leader fails. Propose two strategies to maintain formation.
+
+4. **Swarm Behaviors**: Describe how you would combine aggregation and dispersion behaviors to achieve **foraging**: robots spread out to find targets, then aggregate around discovered targets.
+
+5. **Scalability**: A centralized system with 10 robots sends 100 messages/sec. Estimate message rate for 100 robots. Why is this problematic?
+
+### Coding Exercises
+
+6. **Implement Auction Algorithm**: Extend the `AuctionRobot` code to handle **parallel auctions** (multiple tasks auctioned simultaneously). Ensure each robot bids on all tasks but is only awarded one.
+
+7. **CBBA Simulator**: Implement a complete CBBA simulation with 5 robots and 10 tasks. Verify that robots converge to a conflict-free allocation. Measure convergence time (number of iterations).
+
+8. **Flocking Visualization**: Write a 2D simulation of the Boids flocking algorithm with 20 robots. Visualize separation, alignment, and cohesion vectors. Experiment with different weight values.
+
+9. **Fleet Manager RL**: Train the `FleetManagerDQN` in a simulated warehouse environment (you can use OpenAI Gym). Compare performance against a nearest-robot baseline.
+
+10. **Fault-Tolerant Coordination**: Modify the `ConsensusFormationController` to handle robot failures. If a robot stops sending heartbeats, remaining robots should re-form without it.
+
+### Research Extensions
+
+11. **Heterogeneous Swarms**: Extend the ACO task allocator to handle robots with different capabilities (e.g., some can lift heavy objects, others cannot). Modify the heuristic function accordingly.
+
+12. **Human-Swarm Interface**: Design a GUI (using RViz or web-based) that allows an operator to:
+    - Visualize robot positions and task assignments
+    - Manually override task allocation
+    - Set high-level goals ("maximize coverage of area A")
+
+13. **Multi-Robot Learning**: Implement a shared experience replay buffer where robots contribute observations to a central buffer, and a shared Q-network is trained. Compare learning speed vs. independent learning.
+
+14. **Energy-Aware Allocation**: Add battery constraints to the market-based auction. Robots with low battery should have higher costs or be excluded from bidding. Ensure all robots eventually recharge.
+
+15. **Real-World Deployment**: Deploy a simple multi-robot system on 2-3 TurtleBot3 robots (or simulation). Implement distributed task allocation for "pick up colored blocks and sort them by color."
+
+## Further Reading
+
+- [Swarm Robotics in Warehousing: Coordinated Fleets that Adapt on the Fly (2025)](https://axidio.com/blog/swarm-robotics-in-warehousing-in-scm-2025)
+- [Development of a Fleet Management System for Multiple Robots' Task Allocation Using Deep Reinforcement Learning (2024)](https://www.mdpi.com/2227-9717/12/12/2921)
+- [Swarm Intelligence for Collaborative Play in Humanoid Soccer Teams (2025)](https://www.mdpi.com/1424-8220/25/11/3496)
+- [Self-Organizing Nervous Systems for Robot Swarms (*Science Robotics*, 2025)](https://www.science.org/doi/10.1126/scirobotics.adl5161)
+- [A Collective Intelligence Model for Swarm Robotics Applications (*Nature Communications*, 2025)](https://www.nature.com/articles/s41467-025-61985-7)
+- [Distributed Task Allocation in Swarms of Robots (ResearchGate)](https://www.researchgate.net/publication/232716774_Distributed_Task_Allocation_in_Swarms_of_Robots)
+
+**Next Chapter**: Chapter 31 covers safety and ethics in physical AI—how to build humanoid robots that are safe, reliable, and aligned with human values.

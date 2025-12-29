@@ -1,0 +1,12 @@
+{
+  "label": "Part II: ROS 2",
+  "position": 2,
+  "collapsible": true,
+  "collapsed": true,
+  "link": {
+    "type": "generated-index",
+    "title": "Part II: ROS 2 Fundamentals",
+    "description": "Master the Robot Operating System 2 (ROS 2), including core concepts, communication patterns, and humanoid robot control.",
+    "slug": "/part-02-ros2"
+  }
+}

@@ -1,0 +1,848 @@
+---
+id: ch16-reinforcement-learning
+title: Chapter 16 - Reinforcement Learning for Robotics
+description: Master RL algorithms, policy gradient methods, and sim-to-real transfer for robot locomotion and manipulation.
+sidebar_label: Ch 16. Reinforcement Learning
+sidebar_position: 2
+keywords: [reinforcement learning, PPO, SAC, policy gradient, robot control, sim-to-real]
+difficulty: advanced
+estimatedReadingTime: 45
+---
+
+# Chapter 16: Reinforcement Learning for Robotics
+
+## Learning Objectives
+
+By the end of this chapter, you will be able to:
+- Understand RL fundamentals: MDPs, value functions, and policies
+- Implement modern RL algorithms (PPO, SAC, TD3)
+- Train robots using RL in simulation environments
+- Transfer policies from simulation to real hardware
+- Apply RL to locomotion, manipulation, and multi-task learning
+
+## Introduction
+
+Reinforcement Learning (RL) has revolutionized robotics by enabling robots to learn complex behaviors through trial and error. Unlike supervised learning where you need labeled examples, RL learns from rewards—allowing robots to discover optimal strategies for walking, grasping, navigation, and more.
+
+**Key Insight**: RL is particularly powerful for robotics because:
+- **No need for expert demonstrations**: Robot learns by exploring
+- **Handles high-dimensional continuous control**: Natural for robot actuators
+- **Optimizes long-term performance**: Not just immediate actions
+- **Adapts to changing environments**: Continues learning during deployment
+
+**This Chapter's Focus**: Practical RL for humanoid robots, emphasizing modern algorithms that work in practice.
+
+### When to Use RL
+
+**✅ Good Use Cases:**
+- Complex control tasks hard to hand-code (bipedal walking)
+- Reward is easy to define but optimal behavior isn't obvious
+- Can safely explore in simulation
+- Task has long-term dependencies
+
+**❌ Not Ideal For:**
+- Simple tasks with known solutions (use classical control)
+- Limited simulation fidelity (sim-to-real gap too large)
+- Safety-critical with no room for exploration
+- Reward is ambiguous or hard to specify
+
+## RL Fundamentals
+
+### Markov Decision Process (MDP)
+
+RL formalizes decision-making as an MDP with:
+- **States** (s): Robot configuration, environment state
+- **Actions** (a): Motor commands, joint velocities
+- **Reward** (r): Scalar signal indicating progress toward goal
+- **Transition dynamics** P(s'|s,a): How actions affect state
+- **Policy** π(a|s): Agent's strategy for selecting actions
+
+**Goal**: Learn policy π that maximizes expected cumulative reward
+$$
+J(\pi) = \mathbb{'{'}E{'}'} \left[ \sum_t^\infty \gamma^t r_t \right]
+$$
+where γ ∈ [0,1] is discount factor prioritizing immediate vs future rewards.
+
+### Value Functions
+
+**State Value Function** V^π(s): Expected return starting from state s under policy π
+$$
+V^\pi(s) = \mathbb{'{'}E{'}'} \left[ \sum_t^\infty \gamma^t r_t \mid s_0 = s \right]
+$$
+
+**Action Value Function** Q^π(s,a): Expected return from taking action a in state s
+$$
+Q^\pi(s,a) = \mathbb{'{'}E{'}'} \left[ \sum_t^\infty \gamma^t r_t \mid s_0 = s, a_0 = a \right]
+$$
+
+**Bellman Equations** relate current and future values:
+$$
+V^\pi(s) = \mathbb{'{'}E{'}'} \left[ r(s,a) + \gamma \mathbb{'{'}E{'}'} [V^\pi(s')] \right]
+$$
+
+### Policy Types
+
+**Stochastic Policy**: π(a|s) outputs probability distribution over actions
+- Better for exploration
+- Used in policy gradient methods
+
+**Deterministic Policy**: π(s) = a directly outputs single action
+- Simpler, but needs explicit exploration
+- Used in DDPG, TD3
+
+## Modern RL Algorithms
+
+### Proximal Policy Optimization (PPO)
+
+**Why PPO?** Currently the most reliable algorithm for robotics:
+- Stable training
+- Sample efficient
+- Works well out-of-the-box
+- Handles continuous control
+
+**Key Idea**: Update policy while staying close to old policy to prevent catastrophic forgetting.
+
+**Implementation with Stable-Baselines3:**
+
+```python
+import gymnasium as gym
+import numpy as np
+from stable_baselines3 import PPO
+from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
+from stable_baselines3.common.callbacks import EvalCallback, CheckpointCallback
+
+# Create environment (replace with your robot environment)
+def make_env():
+    def _init():
+        env = gym.make('HumanoidStandup-v4')
+        return env
+    return _init
+
+# Parallel environments for faster training
+num_envs = 8
+env = SubprocVecEnv([make_env() for _ in range(num_envs)])
+
+# Create PPO agent
+model = PPO(
+    policy='MlpPolicy',  # Multi-layer perceptron policy
+    env=env,
+    learning_rate=3e-4,
+    n_steps=2048,        # Steps per environment per update
+    batch_size=64,
+    n_epochs=10,
+    gamma=0.99,          # Discount factor
+    gae_lambda=0.95,     # Generalized Advantage Estimation
+    clip_range=0.2,      # PPO clipping parameter
+    clip_range_vf=None,  # Value function clipping
+    ent_coef=0.0,        # Entropy coefficient (exploration)
+    vf_coef=0.5,         # Value function coefficient
+    max_grad_norm=0.5,   # Gradient clipping
+    use_sde=False,       # State-dependent exploration
+    verbose=1,
+    tensorboard_log='./ppo_humanoid_tensorboard/'
+)
+
+# Callbacks
+eval_callback = EvalCallback(
+    eval_env=DummyVecEnv([make_env()]),
+    best_model_save_path='./models/best_model',
+    log_path='./logs/',
+    eval_freq=10000,
+    deterministic=True,
+    render=False
+)
+
+checkpoint_callback = CheckpointCallback(
+    save_freq=50000,
+    save_path='./models/checkpoints/',
+    name_prefix='ppo_humanoid'
+)
+
+# Train
+model.learn(
+    total_timesteps=5_000_000,
+    callback=[eval_callback, checkpoint_callback],
+    progress_bar=True
+)
+
+# Save final model
+model.save('ppo_humanoid_final')
+
+# Load and evaluate
+model = PPO.load('ppo_humanoid_final')
+
+obs, info = env.reset()
+for _ in range(1000):
+    action, _states = model.predict(obs, deterministic=True)
+    obs, reward, done, truncated, info = env.step(action)
+    env.render()
+```
+
+### Soft Actor-Critic (SAC)
+
+**Why SAC?** Maximum entropy RL for continuous control:
+- Sample efficient (off-policy)
+- Stable
+- Automatic temperature tuning
+- Better for fine manipulation
+
+**Implementation:**
+
+```python
+from stable_baselines3 import SAC
+
+# Create SAC agent
+model = SAC(
+    policy='MlpPolicy',
+    env=env,
+    learning_rate=3e-4,
+    buffer_size=1_000_000,  # Replay buffer
+    learning_starts=10000,   # Start training after N steps
+    batch_size=256,
+    tau=0.005,              # Soft update coefficient
+    gamma=0.99,
+    train_freq=1,           # Update every step
+    gradient_steps=1,
+    ent_coef='auto',        # Automatic entropy tuning
+    target_update_interval=1,
+    target_entropy='auto',
+    use_sde=False,
+    verbose=1,
+    tensorboard_log='./sac_humanoid_tensorboard/'
+)
+
+# Train
+model.learn(
+    total_timesteps=1_000_000,
+    callback=[eval_callback, checkpoint_callback],
+    log_interval=4,
+    progress_bar=True
+)
+
+model.save('sac_humanoid_final')
+```
+
+### Twin Delayed DDPG (TD3)
+
+**Why TD3?** Improved DDPG with:
+- Twin Q-networks (reduce overestimation)
+- Delayed policy updates
+- Target policy smoothing
+
+```python
+from stable_baselines3 import TD3
+from stable_baselines3.common.noise import NormalActionNoise
+
+# Action noise for exploration
+n_actions = env.action_space.shape[-1]
+action_noise = NormalActionNoise(
+    mean=np.zeros(n_actions),
+    sigma=0.1 * np.ones(n_actions)
+)
+
+model = TD3(
+    policy='MlpPolicy',
+    env=env,
+    learning_rate=1e-3,
+    buffer_size=1_000_000,
+    learning_starts=10000,
+    batch_size=100,
+    tau=0.005,
+    gamma=0.99,
+    train_freq=(1, 'step'),
+    gradient_steps=1,
+    action_noise=action_noise,
+    policy_delay=2,         # Update policy every 2 critic updates
+    target_policy_noise=0.2,
+    target_noise_clip=0.5,
+    verbose=1
+)
+
+model.learn(total_timesteps=500_000)
+model.save('td3_humanoid')
+```
+
+## Custom Robot Environments
+
+### Creating Gymnasium Environment
+
+```python
+import gymnasium as gym
+from gymnasium import spaces
+import numpy as np
+import pybullet as p
+import pybullet_data
+
+class HumanoidEnv(gym.Env):
+    """Custom humanoid robot environment"""
+
+    metadata = {'render_modes': ['human', 'rgb_array'], 'render_fps': 30}
+
+    def __init__(self, render_mode=None):
+        super().__init__()
+
+        self.render_mode = render_mode
+
+        # Connect to PyBullet
+        if render_mode == 'human':
+            p.connect(p.GUI)
+        else:
+            p.connect(p.DIRECT)
+
+        p.setAdditionalSearchPath(pybullet_data.getDataPath())
+        p.setGravity(0, 0, -9.81)
+
+        # Action space: joint velocities for 12 joints
+        self.num_joints = 12
+        self.action_space = spaces.Box(
+            low=-1.0,
+            high=1.0,
+            shape=(self.num_joints,),
+            dtype=np.float32
+        )
+
+        # Observation space: joint positions, velocities, IMU
+        obs_dim = self.num_joints * 2 + 6  # pos + vel + IMU (orientation + ang_vel)
+        self.observation_space = spaces.Box(
+            low=-np.inf,
+            high=np.inf,
+            shape=(obs_dim,),
+            dtype=np.float32
+        )
+
+        # Load robot
+        self.robot_id = None
+        self.plane_id = None
+
+        # Control parameters
+        self.max_joint_velocity = 5.0  # rad/s
+        self.dt = 1.0 / 240.0  # Simulation timestep
+
+    def reset(self, seed=None, options=None):
+        super().reset(seed=seed)
+
+        # Reset simulation
+        p.resetSimulation()
+        p.setGravity(0, 0, -9.81)
+        p.setTimeStep(self.dt)
+
+        # Load environment
+        self.plane_id = p.loadURDF('plane.urdf')
+
+        # Load robot
+        self.robot_id = p.loadURDF(
+            'humanoid.urdf',  # Your robot URDF
+            basePosition=[0, 0, 1.0],
+            baseOrientation=p.getQuaternionFromEuler([0, 0, 0]),
+            useFixedBase=False
+        )
+
+        # Get initial observation
+        observation = self._get_observation()
+        info = {}
+
+        return observation, info
+
+    def step(self, action):
+        # Scale actions to joint velocity limits
+        joint_velocities = action * self.max_joint_velocity
+
+        # Apply joint velocities
+        for joint_idx in range(self.num_joints):
+            p.setJointMotorControl2(
+                self.robot_id,
+                joint_idx,
+                p.VELOCITY_CONTROL,
+                targetVelocity=joint_velocities[joint_idx],
+                force=100.0  # Max force
+            )
+
+        # Step simulation
+        p.stepSimulation()
+
+        # Get new observation
+        observation = self._get_observation()
+
+        # Calculate reward
+        reward = self._calculate_reward()
+
+        # Check termination
+        terminated = self._is_terminated()
+        truncated = False
+
+        info = {}
+
+        return observation, reward, terminated, truncated, info
+
+    def _get_observation(self):
+        """Get current robot state"""
+
+        # Joint positions and velocities
+        joint_states = p.getJointStates(self.robot_id, range(self.num_joints))
+        joint_positions = [state[0] for state in joint_states]
+        joint_velocities = [state[1] for state in joint_states]
+
+        # Base orientation and angular velocity
+        base_pos, base_orn = p.getBasePositionAndOrientation(self.robot_id)
+        base_lin_vel, base_ang_vel = p.getBaseVelocity(self.robot_id)
+
+        # Convert quaternion to euler
+        base_euler = p.getEulerFromQuaternion(base_orn)
+
+        # Concatenate observation
+        observation = np.concatenate([
+            joint_positions,
+            joint_velocities,
+            base_euler,
+            base_ang_vel
+        ]).astype(np.float32)
+
+        return observation
+
+    def _calculate_reward(self):
+        """Reward function for standing upright"""
+
+        # Get base position and orientation
+        base_pos, base_orn = p.getBasePositionAndOrientation(self.robot_id)
+        base_euler = p.getEulerFromQuaternion(base_orn)
+
+        # Reward for staying upright
+        height = base_pos[2]
+        uprightness = np.cos(base_euler[0]) * np.cos(base_euler[1])  # Penalize tilt
+
+        # Reward for maintaining height and being upright
+        reward = height * uprightness
+
+        # Penalty for high joint velocities (energy efficiency)
+        joint_states = p.getJointStates(self.robot_id, range(self.num_joints))
+        joint_velocities = np.array([state[1] for state in joint_states])
+        energy_penalty = -0.01 * np.sum(joint_velocities**2)
+
+        total_reward = reward + energy_penalty
+
+        return total_reward
+
+    def _is_terminated(self):
+        """Check if episode should end"""
+
+        # Get base position
+        base_pos, _ = p.getBasePositionAndOrientation(self.robot_id)
+
+        # Terminate if robot falls
+        if base_pos[2] < 0.5:  # Height threshold
+            return True
+
+        return False
+
+    def render(self):
+        if self.render_mode == 'human':
+            pass  # PyBullet GUI renders automatically
+
+    def close(self):
+        p.disconnect()
+
+# Register environment
+gym.register(
+    id='HumanoidCustom-v0',
+    entry_point='__main__:HumanoidEnv',
+    max_episode_steps=1000
+)
+
+# Use environment
+env = gym.make('HumanoidCustom-v0', render_mode='human')
+```
+
+## Reward Shaping
+
+**Good Reward Design is Critical**: Poorly designed rewards lead to unexpected behaviors.
+
+### Principles of Reward Design
+
+1. **Sparse vs Dense Rewards**
+   - **Sparse**: +1 only at goal (hard to learn)
+   - **Dense**: Small rewards at each step guiding toward goal (easier)
+
+2. **Reward Components**
+
+```python
+def calculate_locomotion_reward(state, action):
+    """Well-designed reward for humanoid walking"""
+
+    # Primary objective: forward velocity
+    forward_velocity = state['base_velocity'][0]  # x-direction
+    velocity_reward = forward_velocity
+
+    # Alive bonus (encourage not falling)
+    alive_reward = 1.0 if state['base_height'] > 0.7 else 0.0
+
+    # Penalty for energy use
+    action_magnitude = np.sum(action**2)
+    energy_penalty = -0.001 * action_magnitude
+
+    # Penalty for deviation from upright
+    roll, pitch, yaw = state['base_orientation']
+    uprightness = np.cos(roll) * np.cos(pitch)
+    orientation_reward = 0.5 * uprightness
+
+    # Penalty for foot contact forces (smoother gait)
+    contact_forces = state['foot_contact_forces']
+    contact_penalty = -0.0001 * np.sum(contact_forces**2)
+
+    # Total reward
+    reward = (
+        velocity_reward +
+        alive_reward +
+        energy_penalty +
+        orientation_reward +
+        contact_penalty
+    )
+
+    return reward
+```
+
+3. **Reward Scaling**
+
+```python
+# Normalize rewards to similar magnitudes
+reward_weights = {
+    'task': 1.0,          # Main objective
+    'alive': 0.1,         # Bonus
+    'energy': 0.01,       # Small penalty
+    'smoothness': 0.05    # Regularization
+}
+```
+
+## Sim-to-Real Transfer
+
+### Domain Randomization
+
+**Key Technique**: Randomize simulation parameters so policy learns robust behaviors.
+
+```python
+class RandomizedEnv(gym.Wrapper):
+    """Wrapper for domain randomization"""
+
+    def __init__(self, env):
+        super().__init__(env)
+
+        # Randomization ranges
+        self.mass_scale = (0.8, 1.2)
+        self.friction_scale = (0.5, 1.5)
+        self.motor_strength_scale = (0.8, 1.2)
+        self.latency_range = (0, 0.02)  # seconds
+
+    def reset(self, **kwargs):
+        # Sample random parameters
+        mass_multiplier = np.random.uniform(*self.mass_scale)
+        friction = np.random.uniform(*self.friction_scale)
+        motor_strength = np.random.uniform(*self.motor_strength_scale)
+        latency = np.random.uniform(*self.latency_range)
+
+        # Apply to simulation
+        for link_id in range(p.getNumJoints(self.env.robot_id)):
+            # Randomize mass
+            dynamics_info = p.getDynamicsInfo(self.env.robot_id, link_id)
+            original_mass = dynamics_info[0]
+            p.changeDynamics(
+                self.env.robot_id,
+                link_id,
+                mass=original_mass * mass_multiplier
+            )
+
+            # Randomize friction
+            p.changeDynamics(
+                self.env.robot_id,
+                link_id,
+                lateralFriction=friction
+            )
+
+        # Store motor strength and latency for action execution
+        self.current_motor_strength = motor_strength
+        self.current_latency = latency
+
+        return self.env.reset(**kwargs)
+
+    def step(self, action):
+        # Apply motor strength randomization
+        randomized_action = action * self.current_motor_strength
+
+        # Simulate latency with action buffer
+        # (Simplified - production code would use proper buffer)
+        obs, reward, done, truncated, info = self.env.step(randomized_action)
+
+        return obs, reward, done, truncated, info
+
+# Use randomized environment
+env = RandomizedEnv(gym.make('HumanoidCustom-v0'))
+```
+
+### System Identification
+
+**Learn Simulation Parameters from Real Data:**
+
+```python
+import torch
+import torch.nn as nn
+
+class SimulatorParametersModel(nn.Module):
+    """Neural network to predict simulation parameters"""
+
+    def __init__(self, obs_dim, param_dim):
+        super().__init__()
+
+        self.network = nn.Sequential(
+            nn.Linear(obs_dim, 128),
+            nn.ReLU(),
+            nn.Linear(128, 64),
+            nn.ReLU(),
+            nn.Linear(64, param_dim)
+        )
+
+    def forward(self, observations):
+        return self.network(observations)
+
+# Train on real robot data to predict sim parameters
+# Then use these parameters during RL training
+```
+
+### Residual RL
+
+**Idea**: Learn corrections on top of classical controller
+
+```python
+class ResidualPolicy(nn.Module):
+    """Policy that adds learned corrections to baseline controller"""
+
+    def __init__(self, baseline_controller, state_dim, action_dim):
+        super().__init__()
+
+        self.baseline = baseline_controller
+
+        # Learned residual
+        self.residual_network = nn.Sequential(
+            nn.Linear(state_dim, 128),
+            nn.ReLU(),
+            nn.Linear(128, 128),
+            nn.ReLU(),
+            nn.Linear(128, action_dim),
+            nn.Tanh()  # Bounded residual
+        )
+
+        self.residual_scale = 0.1  # Limit correction magnitude
+
+    def forward(self, state):
+        # Baseline action (e.g., PD controller)
+        baseline_action = self.baseline(state)
+
+        # Learned residual
+        residual = self.residual_network(state) * self.residual_scale
+
+        # Combined action
+        action = baseline_action + residual
+
+        return action
+```
+
+## Multi-Task and Curriculum Learning
+
+### Curriculum Learning
+
+**Gradually increase task difficulty:**
+
+```python
+class CurriculumEnv(gym.Wrapper):
+    """Environment with progressive difficulty"""
+
+    def __init__(self, env):
+        super().__init__(env)
+
+        self.current_level = 0
+        self.max_level = 10
+
+        self.success_threshold = 0.8  # Move to next level at 80% success
+
+    def reset(self, **kwargs):
+        # Set difficulty based on current level
+        if self.current_level < 3:
+            # Level 1-3: Standing only
+            self.env.target_velocity = 0.0
+        elif self.current_level < 6:
+            # Level 4-6: Slow walking
+            self.env.target_velocity = 0.5
+        elif self.current_level < 9:
+            # Level 7-9: Normal walking
+            self.env.target_velocity = 1.0
+        else:
+            # Level 10: Fast walking
+            self.env.target_velocity = 1.5
+
+        return self.env.reset(**kwargs)
+
+    def update_curriculum(self, success_rate):
+        """Call this periodically to advance curriculum"""
+        if success_rate > self.success_threshold:
+            self.current_level = min(self.current_level + 1, self.max_level)
+            print(f"Advanced to curriculum level {self.current_level}")
+```
+
+### Multi-Task Learning
+
+**Train single policy for multiple tasks:**
+
+```python
+class MultiTaskEnv(gym.Env):
+    """Environment with multiple tasks"""
+
+    def __init__(self):
+        super().__init__()
+
+        self.tasks = ['stand', 'walk_forward', 'walk_backward', 'turn_left', 'turn_right']
+        self.current_task = None
+
+        # Observation includes task encoding
+        task_encoding_dim = len(self.tasks)
+        robot_state_dim = 30
+
+        self.observation_space = spaces.Box(
+            low=-np.inf,
+            high=np.inf,
+            shape=(robot_state_dim + task_encoding_dim,),
+            dtype=np.float32
+        )
+
+        self.action_space = spaces.Box(-1, 1, shape=(12,))
+
+    def reset(self, **kwargs):
+        # Sample random task
+        self.current_task = np.random.choice(self.tasks)
+
+        # Reset robot
+        robot_state = self._reset_robot()
+
+        # One-hot encode task
+        task_encoding = np.zeros(len(self.tasks))
+        task_encoding[self.tasks.index(self.current_task)] = 1.0
+
+        # Combine robot state and task encoding
+        observation = np.concatenate([robot_state, task_encoding])
+
+        return observation, {}
+
+    def _calculate_reward(self):
+        if self.current_task == 'stand':
+            return self._standing_reward()
+        elif self.current_task == 'walk_forward':
+            return self._forward_walking_reward()
+        # ... other tasks
+```
+
+## Practice Exercises
+
+### Exercise 1: Train Humanoid to Stand
+
+**Task:** Train a humanoid to stand upright from a seated position
+
+**Requirements:**
+- Design reward function (height + uprightness)
+- Train with PPO for 1M steps
+- Achieve stable standing for 10 seconds
+- Visualize learning curve
+- Test on randomized dynamics
+
+### Exercise 2: Bipedal Walking
+
+**Task:** Train humanoid to walk forward
+
+**Requirements:**
+- Implement curriculum learning (stand → slow walk → fast walk)
+- Reward based on forward velocity
+- Train with SAC
+- Handle push disturbances
+- Achieve 1 m/s walking speed
+
+### Exercise 3: Object Manipulation with RL
+
+**Task:** Train humanoid to grasp and lift objects
+
+**Requirements:**
+- Sparse reward (success/failure)
+- Use HER (Hindsight Experience Replay)
+- Domain randomization for object properties
+- Transfer to real robot with 3 objects
+- >80% success rate
+
+## Best Practices
+
+### 1. Training Stability
+
+- **Normalize observations**: Zero mean, unit variance
+- **Clip rewards**: Prevent extreme values
+- **Use multiple seeds**: Verify reproducibility
+- **Monitor metrics**: Episode length, reward, success rate
+
+### 2. Hyperparameter Tuning
+
+```python
+# PPO hyperparameters (good starting point)
+hyperparams = {
+    'learning_rate': 3e-4,
+    'n_steps': 2048,
+    'batch_size': 64,
+    'n_epochs': 10,
+    'gamma': 0.99,
+    'gae_lambda': 0.95,
+    'clip_range': 0.2,
+    'ent_coef': 0.0,  # Increase for more exploration
+    'vf_coef': 0.5,
+    'max_grad_norm': 0.5
+}
+```
+
+### 3. Debugging RL
+
+Common issues and solutions:
+
+| Problem | Possible Cause | Solution |
+|---------|---------------|----------|
+| No learning | Poor reward design | Check if any positive rewards
+| Unstable training | Large updates | Reduce learning rate, clip gradients
+| Policy collapse | Too much entropy | Reduce ent_coef
+| Slow learning | Sparse rewards | Add denser intermediate rewards
+| Sim-to-real gap | Unrealistic sim | Domain randomization, system ID
+
+## Common Pitfalls
+
+1. **Reward hacking**: Agent finds unintended way to maximize reward
+2. **Exploration insufficient**: Agent gets stuck in local optimum
+3. **Overfitting to simulation**: Doesn't transfer to real robot
+4. **Unstable training**: High variance, doesn't converge
+5. **Forgetting**: Policy degradesduring training (use higher n_steps)
+
+## Further Reading
+
+**Books:**
+- "Reinforcement Learning: An Introduction" by Sutton & Barto
+- "Deep Reinforcement Learning Hands-On" by Lapan
+
+**Papers:**
+- "Proximal Policy Optimization" (Schulman et al., 2017)
+- "Soft Actor-Critic" (Haarnoja et al., 2018)
+- "Learning Dexterous In-Hand Manipulation" (OpenAI, 2019)
+
+**Tools:**
+- [Stable-Baselines3](https://stable-baselines3.readthedocs.io/)
+- [RLlib](https://docs.ray.io/en/latest/rllib/)
+- [Isaac Gym](https://developer.nvidia.com/isaac-gym)
+
+## Next Steps
+
+Now that you understand RL:
+
+1. **Chapter 17**: Use LLMs for high-level task planning
+2. **Chapter 18**: Combine vision and language with VLA models
+3. **Chapter 19**: Apply RL to bipedal locomotion
+4. **Project 5**: Train humanoid to walk and recover from falls
+
+:::tip Key Takeaway
+RL enables robots to learn complex behaviors that are hard to program manually. Success requires careful reward design, stable training, and sim-to-real transfer techniques. Start with simple tasks, use proven algorithms (PPO, SAC), and always test on real hardware early.
+:::

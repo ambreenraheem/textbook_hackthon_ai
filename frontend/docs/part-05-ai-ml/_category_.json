@@ -1,0 +1,12 @@
+{
+  "label": "Part V: AI & ML",
+  "position": 5,
+  "collapsible": true,
+  "collapsed": true,
+  "link": {
+    "type": "generated-index",
+    "title": "Part V: AI & Machine Learning",
+    "description": "Master AI fundamentals, reinforcement learning, large language models, and vision-language-action models for robotics.",
+    "slug": "/part-05-ai-ml"
+  }
+}

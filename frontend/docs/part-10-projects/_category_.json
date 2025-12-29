@@ -1,0 +1,12 @@
+{
+  "label": "Part X: Projects",
+  "position": 10,
+  "collapsible": true,
+  "collapsed": true,
+  "link": {
+    "type": "generated-index",
+    "title": "Part X: Hands-On Projects",
+    "description": "Apply your knowledge with five comprehensive projects: ROS 2 robot, humanoid simulation, conversational robot, vision manipulation, and complete humanoid system.",
+    "slug": "/part-10-projects"
+  }
+}

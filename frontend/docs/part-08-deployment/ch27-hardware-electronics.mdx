@@ -1,0 +1,1333 @@
+---
+id: ch27-hardware-electronics
+title: Chapter 27 - Hardware & Electronics
+description: Select actuators, sensors, controllers, and power systems for robot hardware.
+sidebar_label: Ch 27. Hardware & Electronics
+sidebar_position: 3
+keywords: [actuators, sensors, microcontrollers, power systems, electronics]
+difficulty: intermediate
+estimatedReadingTime: 30
+---
+
+# Chapter 27: Hardware & Electronics
+
+## Learning Objectives
+
+By the end of this chapter, you will be able to:
+- Select appropriate actuators (motors, servos) for robotic applications
+- Choose and interface with robot sensors (LiDAR, cameras, IMU, force/torque)
+- Design robot electronic systems with microcontrollers and computing platforms
+- Implement battery management and power distribution systems
+- Calculate power budgets and thermal management requirements
+
+## Introduction
+
+The physical hardware of a robot—its actuators, sensors, computing platform, and power system—determines its capabilities, performance, and limitations. This chapter covers the electronic and mechanical components that bring robotic systems to life, focusing on practical selection criteria, interfacing techniques, and system integration.
+
+### The Hardware Stack
+
+A typical humanoid robot hardware architecture consists of:
+
+```
+┌─────────────────────────────────────────┐
+│   High-Level Computing (AI/Planning)    │  ← NVIDIA Jetson, Intel NUC
+│   - Object recognition                   │
+│   - Path planning                        │
+│   - Decision making                      │
+└──────────────┬──────────────────────────┘
+               │ Ethernet/USB
+┌──────────────▼──────────────────────────┐
+│   Real-Time Control (Motor Control)      │  ← STM32, Teensy, Arduino
+│   - Joint PID control (1-10 kHz)        │
+│   - Sensor fusion (IMU, encoders)       │
+│   - Low-level safety monitoring          │
+└──────────────┬──────────────────────────┘
+               │ CAN Bus / SPI / I2C
+┌──────────────▼──────────────────────────┐
+│   Actuators & Sensors                    │
+│   - Brushless motors with encoders       │
+│   - Servo motors                         │
+│   - Cameras, LiDAR, IMU                  │
+│   - Force/torque sensors                 │
+└──────────────────────────────────────────┘
+```
+
+## Actuators
+
+Actuators convert electrical energy into mechanical motion. Robot selection depends on required torque, speed, precision, weight, and cost.
+
+### Types of Motors
+
+#### 1. Brushless DC Motors (BLDC)
+
+**Overview:**
+- Most common in modern humanoid robots
+- High efficiency (85-90%), high torque, long lifespan
+- Require electronic speed controller (ESC)
+
+**Key Specifications:**
+- **KV Rating**: RPM per volt (e.g., 100KV motor spins at 1000 RPM at 10V)
+- **Torque**: 0.1 Nm to 10+ Nm depending on size
+- **Efficiency**: 85-90% typical
+- **Weight**: 50g to 5kg+ depending on power
+
+**Applications:**
+- Legs and feet (high torque, large joints)
+- Back and torso (medium torque)
+- Larger arm joints (shoulder, elbow)
+
+**Example Motors:**
+- **CubeMars AK Series**: Integrated planetary gearbox, 30:1 reduction, 12-15 Nm continuous torque
+- **T-Motor U Series**: High KV for fast rotation, used in drones and lightweight arms
+- **ODrive Motors**: Open-source motor controller ecosystem
+
+**Tesla Humanoid (Optimus) Configuration:**
+- 28 frameless BLDC motors total
+- 14 rotating actuators + 14 linear actuators
+- Distribution: Shoulders (6), Elbows (2), Wrists (6), Torso (2), Knees (2), Feet (4)
+
+**Control Example:**
+
+```python
+import odrive
+from odrive.enums import *
+
+class BLDCMotorController:
+    """Control BLDC motor via ODrive controller"""
+
+    def __init__(self, serial_number):
+        # Connect to ODrive
+        self.odrv = odrive.find_any(serial_number=serial_number)
+        self.axis = self.odrv.axis0  # Use axis 0
+
+        # Motor configuration
+        self.configure_motor()
+
+    def configure_motor(self):
+        """Configure motor parameters"""
+
+        # Motor type
+        self.axis.motor.config.motor_type = MOTOR_TYPE_HIGH_CURRENT
+
+        # Current limits (Amps)
+        self.axis.motor.config.current_lim = 40  # Continuous current limit
+        self.axis.motor.config.current_lim_margin = 8  # Extra margin for short bursts
+
+        # Calibration current
+        self.axis.motor.config.calibration_current = 10
+
+        # Encoder configuration
+        self.axis.encoder.config.cpr = 8192  # Counts per revolution
+        self.axis.encoder.config.bandwidth = 1000  # Hz
+
+        # Controller gains (PID)
+        self.axis.controller.config.pos_gain = 20
+        self.axis.controller.config.vel_gain = 0.16
+        self.axis.controller.config.vel_integrator_gain = 0.32
+
+    def calibrate(self):
+        """Perform motor calibration"""
+        self.axis.requested_state = AXIS_STATE_FULL_CALIBRATION_SEQUENCE
+
+        # Wait for calibration to complete
+        import time
+        while self.axis.current_state != AXIS_STATE_IDLE:
+            time.sleep(0.1)
+
+        print("Calibration complete")
+
+    def enable_closed_loop(self):
+        """Enable closed-loop control"""
+        self.axis.requested_state = AXIS_STATE_CLOSED_LOOP_CONTROL
+        self.axis.controller.config.control_mode = CONTROL_MODE_POSITION_CONTROL
+
+    def set_position(self, position_rad, velocity_limit=10, torque_limit=5):
+        """
+        Set target position in radians
+
+        Args:
+            position_rad: Target position (radians)
+            velocity_limit: Max velocity (rad/s)
+            torque_limit: Max torque (Nm)
+        """
+
+        # Convert to motor counts
+        counts_per_rad = self.axis.encoder.config.cpr / (2 * 3.14159)
+        position_counts = position_rad * counts_per_rad
+
+        # Set velocity and torque limits
+        self.axis.controller.config.vel_limit = velocity_limit
+        self.axis.motor.config.torque_lim = torque_limit
+
+        # Command position
+        self.axis.controller.input_pos = position_counts
+
+    def set_velocity(self, velocity_rad_s):
+        """Set target velocity in rad/s"""
+        self.axis.controller.config.control_mode = CONTROL_MODE_VELOCITY_CONTROL
+        self.axis.controller.input_vel = velocity_rad_s
+
+    def set_torque(self, torque_nm):
+        """Set target torque in Nm"""
+        self.axis.controller.config.control_mode = CONTROL_MODE_TORQUE_CONTROL
+
+        # Convert Nm to motor current (depends on motor torque constant)
+        torque_constant = 0.05  # Nm/A (example, varies by motor)
+        current_amps = torque_nm / torque_constant
+
+        self.axis.controller.input_torque = current_amps
+
+    def get_position(self):
+        """Get current position in radians"""
+        counts_per_rad = self.axis.encoder.config.cpr / (2 * 3.14159)
+        position_rad = self.axis.encoder.pos_estimate / counts_per_rad
+        return position_rad
+
+    def get_velocity(self):
+        """Get current velocity in rad/s"""
+        return self.axis.encoder.vel_estimate
+
+    def get_current(self):
+        """Get motor current in Amps"""
+        return self.axis.motor.current_control.Iq_measured
+
+    def stop(self):
+        """Emergency stop"""
+        self.axis.requested_state = AXIS_STATE_IDLE
+
+# Usage
+motor = BLDCMotorController(serial_number="206230593548")
+motor.calibrate()
+motor.enable_closed_loop()
+
+# Move to 90 degrees (π/2 radians)
+motor.set_position(position_rad=1.5708, velocity_limit=5, torque_limit=3)
+
+# Monitor position
+import time
+for i in range(100):
+    pos = motor.get_position()
+    vel = motor.get_velocity()
+    print(f"Position: {pos:.3f} rad, Velocity: {vel:.3f} rad/s")
+    time.sleep(0.1)
+```
+
+#### 2. Servo Motors
+
+**Overview:**
+- Integrated motor + gearbox + controller + encoder
+- Easy to use (single control wire for position)
+- Lower cost than BLDC + separate controller
+
+**Types:**
+
+**Standard Hobby Servos:**
+- Voltage: 4.8V - 7.4V
+- Torque: 1-15 kg-cm
+- Price: $5-$50
+- Applications: Lightweight arms, grippers, small robots
+
+**High-Torque Digital Servos:**
+- Voltage: 6V - 12V
+- Torque: 15-40 kg-cm
+- Price: $50-$200
+- Applications: Medium-sized humanoids, quadrupeds
+
+**Industrial Servo Motors:**
+- Voltage: 24V - 48V
+- Torque: 1-50 Nm
+- Price: $500-$5,000
+- Applications: Industrial robots, high-performance humanoids
+
+**Control Interface:**
+
+```python
+import serial
+import struct
+
+class DynamixelServo:
+    """Control Dynamixel servo motors"""
+
+    # Register addresses
+    ADDR_TORQUE_ENABLE = 64
+    ADDR_GOAL_POSITION = 116
+    ADDR_PRESENT_POSITION = 132
+    ADDR_PRESENT_VELOCITY = 128
+    ADDR_PRESENT_CURRENT = 126
+
+    def __init__(self, port='/dev/ttyUSB0', baudrate=57600, servo_id=1):
+        self.port = serial.Serial(port, baudrate, timeout=0.1)
+        self.servo_id = servo_id
+
+    def enable_torque(self):
+        """Enable motor torque"""
+        self.write_byte(self.ADDR_TORQUE_ENABLE, 1)
+
+    def disable_torque(self):
+        """Disable motor torque (free-spin)"""
+        self.write_byte(self.ADDR_TORQUE_ENABLE, 0)
+
+    def set_position(self, position_deg):
+        """
+        Set target position in degrees
+
+        Args:
+            position_deg: Target angle (0-360 degrees)
+        """
+
+        # Convert degrees to servo units (0-4095 for 360 degrees)
+        servo_units = int((position_deg / 360.0) * 4095)
+        servo_units = max(0, min(4095, servo_units))  # Clamp
+
+        self.write_dword(self.ADDR_GOAL_POSITION, servo_units)
+
+    def get_position(self):
+        """Get current position in degrees"""
+        servo_units = self.read_dword(self.ADDR_PRESENT_POSITION)
+        position_deg = (servo_units / 4095.0) * 360.0
+        return position_deg
+
+    def get_velocity(self):
+        """Get current velocity in deg/s"""
+        velocity_units = self.read_dword(self.ADDR_PRESENT_VELOCITY)
+
+        # Convert to deg/s (varies by model)
+        velocity_deg_s = velocity_units * 0.229  # For Dynamixel XM series
+
+        return velocity_deg_s
+
+    def get_load(self):
+        """Get current load (torque) percentage"""
+        current_raw = self.read_word(self.ADDR_PRESENT_CURRENT)
+
+        # Convert to percentage
+        load_percent = (current_raw / 1193.0) * 100  # For XM series
+
+        return load_percent
+
+    def write_byte(self, address, value):
+        """Write single byte to servo"""
+        packet = self._build_packet([0x03, address, value])
+        self.port.write(packet)
+
+    def write_dword(self, address, value):
+        """Write 4-byte word to servo"""
+        packet = self._build_packet([0x03, address,
+                                     value & 0xFF,
+                                     (value >> 8) & 0xFF,
+                                     (value >> 16) & 0xFF,
+                                     (value >> 24) & 0xFF])
+        self.port.write(packet)
+
+    def read_dword(self, address):
+        """Read 4-byte word from servo"""
+        packet = self._build_packet([0x02, address, 0x04])
+        self.port.write(packet)
+
+        # Read response
+        response = self.port.read(11)  # Expected response length
+
+        if len(response) == 11:
+            # Extract 4-byte value
+            value = struct.unpack('<I', response[5:9])[0]
+            return value
+        else:
+            return 0
+
+    def _build_packet(self, instruction):
+        """Build Dynamixel protocol packet"""
+        # Simplified - real implementation needs checksums
+        packet = [0xFF, 0xFF, 0xFD, 0x00, self.servo_id] + instruction
+        return bytes(packet)
+
+# Usage
+servo = DynamixelServo(port='/dev/ttyUSB0', servo_id=1)
+servo.enable_torque()
+
+# Move to 90 degrees
+servo.set_position(90)
+
+# Monitor position
+import time
+for i in range(50):
+    pos = servo.get_position()
+    load = servo.get_load()
+    print(f"Position: {pos:.1f}°, Load: {load:.1f}%")
+    time.sleep(0.1)
+```
+
+#### 3. Frameless Torque Motors
+
+**Overview:**
+- Motor without housing (stator and rotor only)
+- Ultra-compact for tight integration
+- High torque density
+- Used in Tesla Optimus (28 frameless motors)
+
+**Advantages:**
+- Compact footprint
+- Direct-drive capability (no gearbox needed for some applications)
+- High acceleration
+- Seamless mechanical integration
+
+**Applications:**
+- Humanoid joints (shoulders, wrists, ankles)
+- Exoskeletons
+- Collaborative robots
+
+**Typical Specs (e.g., Kollmorgen Frameless Motor):**
+- Torque: 0.5-20 Nm continuous
+- Diameter: 40-150mm
+- Length: 20-50mm
+- Efficiency: 90%+
+
+### Motor Selection Criteria
+
+| Application | Motor Type | Torque Range | Speed Range | Cost | Example |
+|-------------|------------|--------------|-------------|------|---------|
+| **Gripper fingers** | Micro servo | 0.5-2 kg-cm | 60 rpm | $5-$15 | SG90 |
+| **Wrist rotation** | Digital servo | 10-20 kg-cm | 60 rpm | $50-$100 | Dynamixel AX-12 |
+| **Elbow joint** | BLDC + gearbox | 5-10 Nm | 30 rpm | $300-$600 | CubeMars AK70-10 |
+| **Knee joint** | BLDC + gearbox | 10-30 Nm | 30 rpm | $600-$1,500 | CubeMars AK80-9 |
+| **Hip joint** | Frameless + gearbox | 30-80 Nm | 20 rpm | $1,500-$5,000 | Kollmorgen |
+| **Mobile base wheels** | BLDC | 1-5 Nm | 300 rpm | $100-$400 | ODrive motor |
+
+## Sensors
+
+Sensors provide robots with perception of their environment and internal state.
+
+### 1. Cameras
+
+**Types:**
+
+**RGB Cameras:**
+- Resolution: 640x480 (VGA) to 3840x2160 (4K)
+- Frame rate: 30-120 fps
+- Interface: USB, MIPI CSI, Ethernet (GigE)
+- Applications: Object recognition, visual servoing, human detection
+
+**Depth Cameras:**
+- **Stereo**: Two RGB cameras for triangulation (RealSense D435i, ZED 2)
+- **Structured Light**: Project pattern and measure distortion (Kinect v1)
+- **Time-of-Flight (ToF)**: Measure light travel time (RealSense L515, Azure Kinect)
+- Range: 0.3m to 10m typical
+- Depth accuracy: ±1-5cm at 2m
+
+**Event Cameras:**
+- Detect pixel-level intensity changes asynchronously
+- Ultra-low latency (`<1ms`)
+- High dynamic range (140 dB)
+- Applications: Fast motion tracking, drone stabilization
+- Example: Prophesee Metavision
+
+**Camera Selection (2025 Humanoid Robots):**
+- **Figure 02**: 6 cameras for 360° perception
+- **Walker S2 (UBTECH)**: Dual high-resolution RGB cameras (binocular stereo vision)
+
+**Camera Interfacing (ROS 2):**
+
+```python
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import Image, CameraInfo
+from cv_bridge import CvBridge
+import cv2
+
+class CameraPublisher(Node):
+    """Publish camera frames to ROS 2"""
+
+    def __init__(self):
+        super().__init__('camera_publisher')
+
+        # Publishers
+        self.image_pub = self.create_publisher(Image, '/camera/image_raw', 10)
+        self.info_pub = self.create_publisher(CameraInfo, '/camera/camera_info', 10)
+
+        # OpenCV camera capture
+        self.cap = cv2.VideoCapture(0)  # Device 0 (USB camera)
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        self.cap.set(cv2.CAP_PROP_FPS, 30)
+
+        self.bridge = CvBridge()
+
+        # Timer for frame capture (30 Hz)
+        self.timer = self.create_timer(1.0 / 30.0, self.capture_and_publish)
+
+        # Camera intrinsics (from calibration)
+        self.camera_info = self.create_camera_info()
+
+        self.get_logger().info('Camera publisher started')
+
+    def capture_and_publish(self):
+        """Capture frame and publish to ROS"""
+
+        ret, frame = self.cap.read()
+
+        if ret:
+            # Convert OpenCV image to ROS Image message
+            img_msg = self.bridge.cv2_to_imgmsg(frame, encoding='bgr8')
+            img_msg.header.stamp = self.get_clock().now().to_msg()
+            img_msg.header.frame_id = 'camera_link'
+
+            # Publish image and camera info
+            self.image_pub.publish(img_msg)
+
+            self.camera_info.header.stamp = img_msg.header.stamp
+            self.info_pub.publish(self.camera_info)
+
+    def create_camera_info(self):
+        """Create CameraInfo message with intrinsics"""
+
+        info = CameraInfo()
+        info.header.frame_id = 'camera_link'
+
+        # Image dimensions
+        info.width = 1280
+        info.height = 720
+
+        # Camera matrix (from calibration)
+        # K = [fx, 0, cx]
+        #     [0, fy, cy]
+        #     [0,  0,  1]
+        info.k = [
+            900.0, 0.0, 640.0,
+            0.0, 900.0, 360.0,
+            0.0, 0.0, 1.0
+        ]
+
+        # Distortion coefficients (k1, k2, p1, p2, k3)
+        info.d = [0.1, -0.05, 0.001, 0.001, 0.0]
+        info.distortion_model = 'plumb_bob'
+
+        # Rectification matrix (identity for monocular)
+        info.r = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+
+        # Projection matrix
+        info.p = [
+            900.0, 0.0, 640.0, 0.0,
+            0.0, 900.0, 360.0, 0.0,
+            0.0, 0.0, 1.0, 0.0
+        ]
+
+        return info
+
+    def destroy_node(self):
+        self.cap.release()
+        super().destroy_node()
+
+def main(args=None):
+    rclpy.init(args=args)
+    camera_pub = CameraPublisher()
+    rclpy.spin(camera_pub)
+    camera_pub.destroy_node()
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+### 2. LiDAR (Light Detection and Ranging)
+
+**Overview:**
+- Emits laser pulses and measures time-of-flight
+- Creates precise 3D point clouds
+- Range: 0.1m to 100m+ depending on model
+- Accuracy: ±1-3cm typical
+
+**Types:**
+
+**2D LiDAR (Laser Scanner):**
+- Single rotating laser plane
+- Range: 0.1-30m
+- Scan rate: 5-40 Hz
+- Angular resolution: 0.25-1°
+- Applications: Indoor navigation, obstacle detection
+- Examples: SICK TiM, Hokuyo URG, RPLiDAR A2
+
+**3D LiDAR:**
+- Multiple laser beams (16, 32, 64, 128 channels)
+- 360° horizontal, vertical FOV varies (±15° to ±45°)
+- Range: 10-200m
+- Applications: Autonomous vehicles, outdoor robots
+- Examples: Velodyne VLP-16, Ouster OS1, Livox Mid-360
+
+**Solid-State LiDAR:**
+- No moving parts (MEMS or optical phased array)
+- Lower cost, more compact
+- Examples: Livox Avia, Innovusion Falcon
+
+**LiDAR Usage (ROS 2):**
+
+```python
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import LaserScan
+import numpy as np
+
+class LidarObstacleDetector(Node):
+    """Detect obstacles using 2D LiDAR"""
+
+    def __init__(self):
+        super().__init__('lidar_obstacle_detector')
+
+        # Subscribe to laser scan
+        self.scan_sub = self.create_subscription(
+            LaserScan, '/scan', self.scan_callback, 10
+        )
+
+        # Obstacle detection parameters
+        self.obstacle_distance_threshold = 0.5  # meters
+        self.min_obstacle_points = 5  # Minimum points to consider obstacle
+
+        self.get_logger().info('LiDAR obstacle detector started')
+
+    def scan_callback(self, msg: LaserScan):
+        """Process laser scan data"""
+
+        # Extract ranges
+        ranges = np.array(msg.ranges)
+
+        # Replace inf/nan with max range
+        ranges[np.isinf(ranges)] = msg.range_max
+        ranges[np.isnan(ranges)] = msg.range_max
+
+        # Detect obstacles within threshold
+        obstacle_mask = ranges < self.obstacle_distance_threshold
+
+        # Find contiguous obstacle regions
+        obstacles = self.find_obstacle_clusters(obstacle_mask, ranges, msg.angle_min, msg.angle_increment)
+
+        if obstacles:
+            self.get_logger().warn(f'Detected {len(obstacles)} obstacles:')
+            for obs in obstacles:
+                self.get_logger().warn(f'  Angle: {obs["angle"]:.2f} rad, Distance: {obs["distance"]:.2f} m')
+
+    def find_obstacle_clusters(self, mask, ranges, angle_min, angle_increment):
+        """Find clusters of obstacle points"""
+
+        obstacles = []
+        cluster_start = None
+
+        for i, is_obstacle in enumerate(mask):
+            if is_obstacle and cluster_start is None:
+                cluster_start = i  # Start new cluster
+            elif not is_obstacle and cluster_start is not None:
+                # End cluster
+                cluster_end = i - 1
+                cluster_size = cluster_end - cluster_start + 1
+
+                if cluster_size >= self.min_obstacle_points:
+                    # Calculate cluster centroid
+                    cluster_ranges = ranges[cluster_start:cluster_end+1]
+                    cluster_angles = angle_min + np.arange(cluster_start, cluster_end+1) * angle_increment
+
+                    # Centroid angle (average)
+                    centroid_angle = np.mean(cluster_angles)
+                    centroid_distance = np.mean(cluster_ranges)
+
+                    obstacles.append({
+                        'angle': centroid_angle,
+                        'distance': centroid_distance,
+                        'size': cluster_size
+                    })
+
+                cluster_start = None
+
+        return obstacles
+
+def main(args=None):
+    rclpy.init(args=args)
+    detector = LidarObstacleDetector()
+    rclpy.spin(detector)
+    detector.destroy_node()
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+### 3. Inertial Measurement Unit (IMU)
+
+**Overview:**
+- Measures acceleration, angular velocity, and (sometimes) magnetic field
+- Essential for balance and orientation estimation
+- Sampling rate: 100 Hz to 1000 Hz
+
+**Components:**
+- **Accelerometer**: 3-axis linear acceleration (g)
+- **Gyroscope**: 3-axis angular velocity (rad/s)
+- **Magnetometer** (optional): 3-axis magnetic field (μT) for heading
+
+**Common IMUs:**
+- **MPU-6050**: 6-axis (accel + gyro), $5, I2C interface
+- **BMI088**: 6-axis, high-performance, used in drones
+- **VectorNav VN-100**: 9-axis with sensor fusion, $500+
+- **LORD MicroStrain 3DM-GX5**: Industrial-grade, $2,000+
+
+**IMU Interfacing:**
+
+```python
+import smbus2
+import time
+import math
+
+class MPU6050:
+    """Interface with MPU-6050 IMU over I2C"""
+
+    # I2C address
+    DEVICE_ADDRESS = 0x68
+
+    # Register addresses
+    PWR_MGMT_1 = 0x6B
+    ACCEL_XOUT_H = 0x3B
+    GYRO_XOUT_H = 0x43
+
+    def __init__(self, bus_number=1):
+        self.bus = smbus2.SMBus(bus_number)
+
+        # Wake up MPU-6050
+        self.bus.write_byte_data(self.DEVICE_ADDRESS, self.PWR_MGMT_1, 0)
+        time.sleep(0.1)
+
+    def read_raw_data(self, register):
+        """Read 16-bit signed value from register"""
+        high = self.bus.read_byte_data(self.DEVICE_ADDRESS, register)
+        low = self.bus.read_byte_data(self.DEVICE_ADDRESS, register + 1)
+
+        # Combine high and low bytes
+        value = (high << 8) | low
+
+        # Convert to signed
+        if value > 32767:
+            value -= 65536
+
+        return value
+
+    def get_acceleration(self):
+        """Get acceleration in g (9.81 m/s²)"""
+
+        acc_x = self.read_raw_data(self.ACCEL_XOUT_H)
+        acc_y = self.read_raw_data(self.ACCEL_XOUT_H + 2)
+        acc_z = self.read_raw_data(self.ACCEL_XOUT_H + 4)
+
+        # Scale factor (±2g range)
+        scale = 16384.0
+
+        return {
+            'x': acc_x / scale,
+            'y': acc_y / scale,
+            'z': acc_z / scale
+        }
+
+    def get_gyro(self):
+        """Get angular velocity in rad/s"""
+
+        gyro_x = self.read_raw_data(self.GYRO_XOUT_H)
+        gyro_y = self.read_raw_data(self.GYRO_XOUT_H + 2)
+        gyro_z = self.read_raw_data(self.GYRO_XOUT_H + 4)
+
+        # Scale factor (±250°/s range)
+        scale = 131.0
+        deg_to_rad = math.pi / 180.0
+
+        return {
+            'x': (gyro_x / scale) * deg_to_rad,
+            'y': (gyro_y / scale) * deg_to_rad,
+            'z': (gyro_z / scale) * deg_to_rad
+        }
+
+    def get_orientation_estimate(self):
+        """Simple orientation estimation from accelerometer"""
+
+        acc = self.get_acceleration()
+
+        # Calculate pitch and roll from accelerometer
+        # (Assumes robot is mostly upright, not accurate during motion)
+
+        pitch = math.atan2(acc['x'], math.sqrt(acc['y']**2 + acc['z']**2))
+        roll = math.atan2(acc['y'], math.sqrt(acc['x']**2 + acc['z']**2))
+
+        return {
+            'pitch': pitch,
+            'roll': roll,
+            'yaw': 0.0  # Cannot determine yaw from accelerometer alone
+        }
+
+# Usage
+imu = MPU6050(bus_number=1)
+
+for i in range(100):
+    acc = imu.get_acceleration()
+    gyro = imu.get_gyro()
+    orientation = imu.get_orientation_estimate()
+
+    print(f"Accel: x={acc['x']:.2f}g y={acc['y']:.2f}g z={acc['z']:.2f}g")
+    print(f"Gyro: x={gyro['x']:.2f} y={gyro['y']:.2f} z={gyro['z']:.2f} rad/s")
+    print(f"Pitch: {math.degrees(orientation['pitch']):.1f}° Roll: {math.degrees(orientation['roll']):.1f}°")
+    print()
+
+    time.sleep(0.1)
+```
+
+### 4. Force/Torque Sensors
+
+**Overview:**
+- Measure forces (Fx, Fy, Fz) and torques (Tx, Ty, Tz) in 6 axes
+- Critical for compliant manipulation and safe human-robot interaction
+- Mounted at wrist (between arm and gripper) or feet (ground reaction force)
+
+**Specifications:**
+- Force range: ±10N to ±1000N depending on application
+- Torque range: ±1Nm to ±100Nm
+- Resolution: 0.01N to 0.1N
+- Sampling rate: 1 kHz typical
+
+**Market Trends (2025):**
+- Explosive growth in China: 6-axis force sensor shipments increased **1100% year-over-year** in 2024
+- Price reduction to "hundreds of yuan" (~$30-$50 USD) for basic sensors
+- High demand driven by humanoid robot mass production
+
+**Applications:**
+- **Assembly**: Detect part insertion, adjust force
+- **Grasping**: Prevent crushing objects, detect slip
+- **Walking**: Balance control using ground reaction forces
+- **Teleoperation**: Haptic feedback to operator
+
+**Force/Torque Sensor Reading:**
+
+```python
+import socket
+import struct
+
+class ATIForceTorqueSensor:
+    """Interface with ATI Mini40/45 force/torque sensor"""
+
+    def __init__(self, ip_address='192.168.1.1', port=49152):
+        self.ip = ip_address
+        self.port = port
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.socket.settimeout(1.0)
+
+        # Calibration matrix (from sensor datasheet)
+        self.calibration_matrix = self.load_calibration()
+
+        # Bias (zero offset)
+        self.bias = {'fx': 0, 'fy': 0, 'fz': 0, 'tx': 0, 'ty': 0, 'tz': 0}
+
+    def load_calibration(self):
+        """Load sensor calibration matrix"""
+        # Simplified - real implementation loads from XML file
+        return [[1, 0, 0, 0, 0, 0],
+                [0, 1, 0, 0, 0, 0],
+                [0, 0, 1, 0, 0, 0],
+                [0, 0, 0, 1, 0, 0],
+                [0, 0, 0, 0, 1, 0],
+                [0, 0, 0, 0, 0, 1]]
+
+    def tare(self, samples=100):
+        """Zero the sensor (remove gravity offset)"""
+
+        fx_sum, fy_sum, fz_sum = 0, 0, 0
+        tx_sum, ty_sum, tz_sum = 0, 0, 0
+
+        for _ in range(samples):
+            reading = self.read_raw()
+            fx_sum += reading['fx']
+            fy_sum += reading['fy']
+            fz_sum += reading['fz']
+            tx_sum += reading['tx']
+            ty_sum += reading['ty']
+            tz_sum += reading['tz']
+
+        self.bias = {
+            'fx': fx_sum / samples,
+            'fy': fy_sum / samples,
+            'fz': fz_sum / samples,
+            'tx': tx_sum / samples,
+            'ty': ty_sum / samples,
+            'tz': tz_sum / samples
+        }
+
+    def read_raw(self):
+        """Read raw force/torque data"""
+
+        # Send request packet
+        request = struct.pack('!HHI', 0x1234, 0x0002, 0)
+        self.socket.sendto(request, (self.ip, self.port))
+
+        # Receive response
+        data, _ = self.socket.recvfrom(36)  # 36 bytes response
+
+        # Parse response (6 x 32-bit integers)
+        values = struct.unpack('!6i', data[12:36])
+
+        return {
+            'fx': values[0] / 1000000.0,  # Convert to Newtons
+            'fy': values[1] / 1000000.0,
+            'fz': values[2] / 1000000.0,
+            'tx': values[3] / 1000000.0,  # Nm
+            'ty': values[4] / 1000000.0,
+            'tz': values[5] / 1000000.0
+        }
+
+    def read(self):
+        """Read bias-compensated force/torque"""
+
+        raw = self.read_raw()
+
+        return {
+            'fx': raw['fx'] - self.bias['fx'],
+            'fy': raw['fy'] - self.bias['fy'],
+            'fz': raw['fz'] - self.bias['fz'],
+            'tx': raw['tx'] - self.bias['tx'],
+            'ty': raw['ty'] - self.bias['ty'],
+            'tz': raw['tz'] - self.bias['tz']
+        }
+
+    def get_magnitude(self):
+        """Get force and torque magnitudes"""
+        ft = self.read()
+
+        import math
+        force_mag = math.sqrt(ft['fx']**2 + ft['fy']**2 + ft['fz']**2)
+        torque_mag = math.sqrt(ft['tx']**2 + ft['ty']**2 + ft['tz']**2)
+
+        return force_mag, torque_mag
+
+# Usage
+sensor = ATIForceTorqueSensor(ip_address='192.168.1.1')
+sensor.tare()  # Zero the sensor
+
+import time
+for i in range(100):
+    ft = sensor.read()
+    force_mag, torque_mag = sensor.get_magnitude()
+
+    print(f"Force: [{ft['fx']:.2f}, {ft['fy']:.2f}, {ft['fz']:.2f}] N")
+    print(f"Torque: [{ft['tx']:.3f}, {ft['ty']:.3f}, {ft['tz']:.3f}] Nm")
+    print(f"Magnitude: {force_mag:.2f} N, {torque_mag:.3f} Nm")
+    print()
+
+    time.sleep(0.1)
+```
+
+## Computing Platforms
+
+Robots require computing hardware for high-level AI (object recognition, planning) and low-level control (motor PID loops).
+
+### Embedded Computing Options (2025)
+
+| Platform | CPU | GPU/AI | RAM | Storage | Power | Price | Best For |
+|----------|-----|--------|-----|---------|-------|-------|----------|
+| **Raspberry Pi 5** | 4-core ARM | VideoCore VII | 4-8GB | microSD | 5W | $60-$80 | Education, prototypes |
+| **NVIDIA Jetson Nano** | 4-core ARM | 128-core CUDA | 4GB | microSD | 5-10W | $99 | Basic AI vision |
+| **NVIDIA Jetson Orin Nano** | 6-core ARM | 1024-core CUDA | 8GB | NVMe | 7-15W | $499 | Advanced AI vision |
+| **NVIDIA Jetson AGX Orin** | 12-core ARM | 2048-core CUDA | 32-64GB | NVMe | 15-60W | $1,599-$2,499 | Multi-camera AI, autonomy |
+| **Intel NUC** | x86 Core i5/i7 | Intel Iris | 16-64GB | NVMe SSD | 15-65W | $400-$1,200 | General compute, ROS 2 |
+| **Raspberry Pi CM4** | 4-core ARM | VideoCore VI | 1-8GB | eMMC | 3-5W | $35-$90 | Embedded integration |
+
+### Performance Benchmarks (2025 Study)
+
+**AI Inference Performance (TOPS - Tera Operations Per Second):**
+- Jetson Orin NX: 100 TOPS
+- Jetson Nano Super: 67 TOPS
+- Jetson Nano: 0.5 TOPS
+- Raspberry Pi 5 + Coral TPU: ~4 TOPS
+
+**Power Consumption:**
+- Jetson Nano: ~7W
+- Jetson Orin NX: ~10.6W (under load)
+- Raspberry Pi 5 + Coral: ~8.3W
+
+**Thermal Management:**
+- Jetson Nano: 42°C (with heatsink)
+- Jetson Orin NX: 45°C (with heatsink)
+- Raspberry Pi 5: 80°C (without active cooling) - **requires fan for sustained workloads**
+
+### Platform Selection
+
+**For Educational Robots / Prototypes:**
+→ **Raspberry Pi 5** ($60-$80)
+- Sufficient for basic navigation, simple vision
+- Large community support
+- Easy Python programming
+
+**For Computer Vision / AI Robots:**
+→ **Jetson Orin Nano** ($499)
+- 22x AI performance vs. Raspberry Pi
+- Can run YOLOv8, depth estimation, SLAM simultaneously
+- Native ROS 2 support
+
+**For High-Performance Humanoids:**
+→ **Jetson AGX Orin** ($1,599+) or **Intel NUC**
+- Multi-camera processing
+- Real-time object tracking
+- Complex motion planning
+
+**For Low-Level Motor Control:**
+→ **Teensy 4.1** ($27) or **STM32F4** ($10-$40)
+- Real-time control loops (1-10 kHz)
+- CAN bus, PWM, encoder interfaces
+- Low latency (&lt;1ms)
+
+### Hierarchical Computing Architecture
+
+Most advanced robots use a two-tier system:
+
+```
+┌─────────────────────────────────────┐
+│   High-Level Computer               │
+│   (Jetson Orin / Intel NUC)        │
+│   - ROS 2 Navigation                │
+│   - Object detection (YOLOv8)       │
+│   - Path planning                   │
+│   - Task scheduling                 │
+└─────────────┬───────────────────────┘
+              │ Ethernet / USB
+┌─────────────▼───────────────────────┐
+│   Real-Time Controller              │
+│   (Teensy 4.1 / STM32)             │
+│   - Motor PID control (1 kHz)       │
+│   - Sensor fusion (IMU + encoders)  │
+│   - Emergency stop logic            │
+│   - CAN bus communication           │
+└─────────────────────────────────────┘
+```
+
+**Why Two-Tier?**
+- **Linux is not real-time**: Task scheduling can have 1-10ms jitter
+- **Motor control needs &lt;1ms cycle time**: Requires RTOS or bare-metal microcontroller
+- **AI workloads need GPU**: High-level computer handles vision/planning
+
+## Power Systems
+
+Power management is critical for mobile robots - battery capacity determines runtime, and poor distribution causes voltage sags and resets.
+
+### Battery Technologies
+
+**Lithium-Ion (Li-ion):**
+- Energy density: 150-250 Wh/kg
+- Voltage: 3.6-3.7V per cell (nominal)
+- Cycle life: 500-1000 cycles
+- Applications: Most mobile robots
+- Chemistry: NMC (Nickel Manganese Cobalt), NCA (Nickel Cobalt Aluminum)
+
+**Lithium Polymer (LiPo):**
+- Energy density: 150-200 Wh/kg
+- High discharge rate (20-50C)
+- Lightweight (soft pouch cells)
+- Applications: Drones, racing robots
+- **Safety concern**: Can catch fire if punctured or overcharged
+
+**Lithium Iron Phosphate (LiFePO4):**
+- Energy density: 90-120 Wh/kg (lower than Li-ion)
+- Cycle life: 2000-5000 cycles (much higher)
+- Safer (less fire risk)
+- Applications: Service robots with long lifespan requirements
+
+### Market Trends (2025)
+
+**Mobile Robot Battery Market:**
+- Size: **$1.28 billion (2025)** → **$2.31 billion (2031)**
+- CAGR: 10.8%
+- Driver: Warehouse automation, delivery robots, humanoids
+
+**Key Advancements:**
+- **Fast charging**: 80% in &lt;15 minutes
+- **Battery Management Systems (BMS)**: Predictive maintenance, dynamic power allocation
+- **Energy density improvements**: 250-300 Wh/kg target by 2030
+
+### Battery Sizing
+
+**Example: Mobile Delivery Robot**
+
+**Power Budget:**
+- Drive motors: 2 × 100W = 200W
+- LiDAR: 5W
+- Camera: 3W
+- Jetson Nano: 10W
+- Microcontroller: 2W
+- **Total average power: 220W**
+
+**Runtime Requirement: 4 hours**
+
+**Energy needed: 220W × 4h = 880 Wh**
+
+**Battery selection:**
+- Nominal voltage: 24V (7S Li-ion: 7 × 3.6V = 25.2V)
+- Capacity needed: 880 Wh / 24V = 36.7 Ah
+- Safety margin (80% depth of discharge): 36.7 / 0.8 = 45.9 Ah
+- **Select: 24V 50Ah battery pack**
+
+**Physical battery:**
+- 18650 cells (3.6V, 3.5Ah per cell)
+- Configuration: 7S14P (7 series, 14 parallel) = 98 cells
+- Energy: 7 × 3.6V × 14 × 3.5Ah = 1234 Wh
+- Weight: 98 cells × 48g = 4.7 kg
+
+### Battery Management System (BMS)
+
+A BMS is **mandatory** for lithium batteries to prevent:
+- **Overcharge**: >4.2V per cell causes degradation and fire risk
+- **Overdischarge**: &lt;2.5V per cell causes permanent capacity loss
+- **Overcurrent**: Excessive discharge current damages cells
+- **Thermal runaway**: Overheating can cause fire
+
+**BMS Functions:**
+- Cell voltage monitoring (each cell individually)
+- Current monitoring (charge/discharge)
+- Temperature monitoring (multiple sensors)
+- Cell balancing (equalizes charge across cells)
+- State of Charge (SOC) estimation
+- Protection (cut-off on fault conditions)
+
+**BMS Interface Example:**
+
+```python
+import serial
+import struct
+
+class SmartBMS:
+    """Interface with Smart BMS over UART"""
+
+    def __init__(self, port='/dev/ttyUSB1', baudrate=9600):
+        self.serial = serial.Serial(port, baudrate, timeout=1.0)
+
+    def read_status(self):
+        """Read battery status"""
+
+        # Send request command
+        command = bytes([0xDD, 0xA5, 0x03, 0x00, 0xFF, 0xFD, 0x77])
+        self.serial.write(command)
+
+        # Read response (varies by BMS model)
+        response = self.serial.read(34)
+
+        if len(response) == 34:
+            # Parse response (example format)
+            voltage = struct.unpack('>H', response[4:6])[0] / 100.0  # Total voltage (V)
+            current = struct.unpack('>h', response[6:8])[0] / 100.0  # Current (A)
+            soc = response[23]  # State of charge (%)
+            capacity_remain = struct.unpack('>H', response[8:10])[0] / 100.0  # Ah
+            capacity_full = struct.unpack('>H', response[10:12])[0] / 100.0  # Ah
+            cycles = struct.unpack('>H', response[12:14])[0]
+            temp = struct.unpack('>h', response[27:29])[0] / 10.0  # Temperature (°C)
+
+            return {
+                'voltage': voltage,
+                'current': current,
+                'soc': soc,
+                'capacity_remain': capacity_remain,
+                'capacity_full': capacity_full,
+                'cycles': cycles,
+                'temperature': temp,
+                'power': voltage * current
+            }
+        else:
+            return None
+
+    def get_cell_voltages(self):
+        """Read individual cell voltages"""
+
+        # Send cell voltage request
+        command = bytes([0xDD, 0xA5, 0x04, 0x00, 0xFF, 0xFC, 0x77])
+        self.serial.write(command)
+
+        response = self.serial.read(100)  # Variable length
+
+        if len(response) > 10:
+            num_cells = response[3]
+            cell_voltages = []
+
+            for i in range(num_cells):
+                offset = 4 + i * 2
+                voltage_mv = struct.unpack('>H', response[offset:offset+2])[0]
+                cell_voltages.append(voltage_mv / 1000.0)  # Convert to V
+
+            return cell_voltages
+        else:
+            return []
+
+# Usage
+bms = SmartBMS(port='/dev/ttyUSB1')
+
+import time
+for i in range(10):
+    status = bms.read_status()
+
+    if status:
+        print(f"Battery Status:")
+        print(f"  Voltage: {status['voltage']:.2f} V")
+        print(f"  Current: {status['current']:.2f} A")
+        print(f"  Power: {status['power']:.1f} W")
+        print(f"  SOC: {status['soc']}%")
+        print(f"  Capacity: {status['capacity_remain']:.2f} / {status['capacity_full']:.2f} Ah")
+        print(f"  Temperature: {status['temperature']:.1f} °C")
+        print(f"  Cycles: {status['cycles']}")
+
+        cell_voltages = bms.get_cell_voltages()
+        print(f"  Cell Voltages: {[f'{v:.3f}V' for v in cell_voltages]}")
+    else:
+        print("Failed to read BMS")
+
+    print()
+    time.sleep(1.0)
+```
+
+### Power Distribution
+
+**Typical Robot Power Architecture:**
+
+```
+Battery (24V)
+    |
+    ├──> Buck Converter (12V, 10A) ──> Motors, Actuators
+    |
+    ├──> Buck Converter (12V, 5A)  ──> LiDAR, Cameras
+    |
+    ├──> Buck Converter (5V, 10A)  ──> Jetson Nano, Raspberry Pi
+    |
+    └──> Buck Converter (5V, 3A)   ──> Microcontroller, Sensors
+```
+
+**Why Multiple Converters?**
+- Different components need different voltages
+- Isolation prevents noise coupling (motors → sensors)
+- Overcurrent protection per subsystem
+
+## System Integration Best Practices
+
+### 1. Grounding and EMI
+
+**Problem**: Motors create electrical noise that interferes with sensors
+
+**Solutions:**
+- **Star grounding**: All grounds connect to single point (battery negative)
+- **Twisted pair wiring**: Twist motor power wires together (cancels magnetic fields)
+- **Shielded cables**: Use shielded cables for sensor signals
+- **Capacitors on motors**: 0.1μF ceramic capacitor across motor terminals
+
+### 2. Connector Selection
+
+**Power Connectors:**
+- XT60, XT90: High-current (30-90A), locking, polarized
+- Anderson Powerpole: Modular, 15-45A ratings
+- Avoid: Barrel jacks (poor contact, not locking)
+
+**Signal Connectors:**
+- JST-XH: Common for servos, sensors (2-10 pins)
+- Molex Picoblade: Compact, reliable (1.25mm pitch)
+- RJ45 Ethernet: CAN bus, sensor networks
+
+### 3. Fusing and Protection
+
+**Every power rail should have a fuse:**
+- Main battery: 50-100A fuse or circuit breaker
+- Motor circuits: 20-40A per motor
+- Computing: 5-10A
+- Sensors: 2-5A
+
+**Emergency Stop (E-stop):**
+- Physical button that cuts motor power
+- Should NOT cut computer power (allow safe shutdown)
+- Required for safety certification
+
+### 4. Cable Management
+
+**Best Practices:**
+- Use cable ties and mounts (prevent snagging)
+- Allow slack for joint movement
+- Label all cables (voltage, signal type)
+- Color code: Red (power+), Black (ground), Yellow (signal)
+
+## Key Takeaways
+
+- **Actuators**: BLDC motors dominate humanoid robotics (high torque density, efficiency); servo motors for simpler applications; frameless motors for compact integration
+- **Sensors**: Multi-sensor fusion (cameras + LiDAR + IMU) essential for robust perception; force/torque sensors enable compliant interaction
+- **Computing**: Two-tier architecture common—high-level AI on Jetson/NUC, real-time control on STM32/Teensy
+- **Power**: Li-ion batteries standard; BMS mandatory for safety; fast-charging (&lt;15 min to 80%) now available in 2025
+- **Integration**: Proper grounding, shielding, fusing, and cable management prevent 90% of hardware issues
+
+## Practice Exercises
+
+### Exercise 1: Motor Selection and Control
+
+**Objective**: Select motor and implement PID position control
+
+**Requirements:**
+- Choose motor for robot elbow (10 Nm torque, 30 rpm)
+- Interface with ODrive or similar controller
+- Implement PID control loop
+- Tune gains for &lt;5% overshoot, &lt;1 second settling time
+
+**Deliverables:**
+- Motor selection justification (torque, speed, cost)
+- Control code (Python or C++)
+- Step response plot
+
+### Exercise 2: Sensor Fusion
+
+**Objective**: Fuse IMU and encoder data for better state estimation
+
+**Requirements:**
+- Read IMU (accel + gyro) and joint encoders
+- Implement complementary filter or Kalman filter
+- Estimate robot orientation to ±2° accuracy
+
+**Tech Stack:**
+- ROS 2
+- `robot_localization` package
+- Matplotlib for visualization
+
+### Exercise 3: Power System Design
+
+**Objective**: Design complete power system for mobile robot
+
+**Requirements:**
+- Define power budget for all components
+- Select battery (voltage, capacity)
+- Choose DC-DC converters
+- Create wiring diagram with fusing
+- Calculate runtime
+
+**Specifications:**
+- 4-hour runtime
+- 2× 200W drive motors
+- Jetson Orin Nano (15W)
+- LiDAR (5W), cameras (3W each, 2 total)
+
+## Further Reading
+
+### Component Suppliers
+- [CubeMars - Robotic Actuators](https://www.cubemars.com/)
+- [Kollmorgen - Frameless Motors](https://www.kollmorgen.com/en-us/solutions/robotics/humanoid-robots)
+- [NVIDIA Jetson - Embedded AI](https://developer.nvidia.com/embedded-computing)
+- [ATI Industrial Automation - Force/Torque Sensors](https://www.ati-ia.com/)
+
+### Technical Resources
+- [ODrive Motor Controller Documentation](https://docs.odriverobotics.com/)
+- [ROS 2 Hardware Interface Tutorial](https://control.ros.org/master/doc/ros2_control/hardware_interface/doc/hardware_interface_types_userdoc.html)
+
+### Research
+- [Sensors for Robotics 2023-2043 - IDTechEx](https://www.idtechex.com/en/research-report/sensors-for-robotics-2023-2043-technologies-markets-and-forecasts/908)
+
+## Next Steps
+
+Continue to [Chapter 28: Production & Deployment](./ch28-production.mdx) to learn about manufacturing humanoid robots at scale.
+
+For motor control algorithms, see [Chapter 21: Whole-Body Control](../part-06-motion-control/ch21-whole-body-control.mdx).
+
+---
+
+## Sources
+
+- [What Motors Are Used in Humanoid Robots - Lammotor](https://lammotor.com/what-motors-are-used-in-humanoid-robots/)
+- [CubeMars Humanoid Robot Motors](https://www.cubemars.com/categorys/humanoid-robot-motor)
+- [Types of Sensors in Robotics - Standard Bots](https://standardbots.com/blog/every-type-of-sensors-in-robotics---explained)
+- [Humanoid Robots Propel Sensors to Blistering Rise](https://eu.36kr.com/en/p/3447603077437064)
+- [Jetson Nano vs Raspberry Pi AI Comparison - ThinkRobotics](https://thinkrobotics.com/blogs/learn/jetson-nano-vs-raspberry-pi-ai-the-ultimate-performance-comparison-for-edge-computing)
+- [Benchmarking Edge AI Platforms - Georgia Southern University](https://scholars.georgiasouthern.edu/en/publications/benchmarking-edge-ai-platforms-performance-analysis-of-nvidia-jet/)
+- [Mobile Robot Battery Market Outlook 2025-2032](https://www.intelmarketresearch.com/mobile-robot-battery-2025-2032-217-6098)
+- [BMS for Lithium-Ion Batteries Guide 2025 - ThinkRobotics](https://thinkrobotics.com/blogs/learn/bms-for-lithium-ion-batteries-the-essential-guide-to-battery-management-systems-in-2025)
+- [Robot Battery Tech: High Energy Density & Smart Management - Grepow](https://www.grepow.com/blog/future-trends-in-robot-battery-technology-high-energy-density-and-smart-management.html)

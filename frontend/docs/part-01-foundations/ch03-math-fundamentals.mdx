@@ -1,0 +1,125 @@
+---
+id: ch03-math-fundamentals
+title: Chapter 3 - Mathematical Fundamentals for Robotics
+description: Master linear algebra, transformation matrices, kinematics, and differential equations for robot control.
+sidebar_label: Ch 3. Math Fundamentals
+sidebar_position: 3
+keywords: [linear algebra, kinematics, transformation matrices, differential equations]
+difficulty: intermediate
+estimatedReadingTime: 30
+---
+
+# Chapter 3: Mathematical Fundamentals for Robotics
+
+## Learning Objectives
+
+By the end of this chapter, you will be able to:
+- Apply linear algebra concepts to robot kinematics
+- Understand transformation matrices and coordinate frames
+- Solve forward and inverse kinematics problems
+- Use differential equations for motion modeling
+
+## Introduction
+
+Mathematical fundamentals form the backbone of robotics. Understanding linear algebra, transformation matrices, and kinematics is essential for controlling and programming humanoid robots.
+
+## Transformation Matrices
+
+Transformation matrices are used to represent the position and orientation of objects in 3D space. They enable us to convert coordinates between different reference frames.
+
+### Interactive Transformation Matrix Visualizer
+
+Explore how rotation and scaling transformations affect a 2D object:
+
+import InteractiveDiagram from '@site/src/components/InteractiveDiagram';
+
+<InteractiveDiagram
+  title="2D Transformation Matrix Visualizer"
+  defaultRotation={45}
+  defaultScale={1.2}
+  showGrid={true}
+/>
+
+### Key Concepts
+
+**Rotation Matrix (2D):**
+```
+R(θ) = [cos(θ)  -sin(θ)]
+       [sin(θ)   cos(θ)]
+```
+
+**Scaling Matrix (2D):**
+```
+S(s) = [s  0]
+       [0  s]
+```
+
+**Combined Transformation:**
+The combined transformation matrix applies both rotation and scaling:
+```
+T = S(s) × R(θ)
+```
+
+## Linear Algebra for Robotics
+
+### Vectors and Coordinate Frames
+
+In robotics, we frequently work with multiple coordinate frames:
+- **World frame**: Fixed reference frame
+- **Robot base frame**: Attached to the robot's base
+- **End-effector frame**: Attached to the robot's hand or tool
+
+### Matrix Operations
+
+Understanding matrix multiplication, inverse, and transpose operations is crucial for:
+- Forward kinematics (joint angles → end-effector position)
+- Inverse kinematics (desired position → joint angles)
+- Velocity and force transformations
+
+## Kinematics
+
+### Forward Kinematics
+
+Forward kinematics calculates the position and orientation of the end-effector given the joint angles:
+
+```
+x = f(θ₁, θ₂, ..., θₙ)
+```
+
+### Inverse Kinematics
+
+Inverse kinematics solves for joint angles needed to reach a desired end-effector pose. This is typically more complex and may have multiple solutions or no solution.
+
+## Differential Equations
+
+Differential equations describe how systems change over time, essential for:
+- Motion planning
+- Trajectory generation
+- Dynamic simulation
+- Control system design
+
+### Example: Simple Harmonic Motion
+
+The equation of motion for a spring-mass system:
+```
+m(d²x/dt²) + kx = 0
+```
+
+This type of differential equation appears frequently in robot dynamics and control.
+
+## Practice Problems
+
+1. Calculate the 2D transformation matrix for a 90° rotation followed by scaling by factor 2
+2. Find the inverse of a given transformation matrix
+3. Derive the forward kinematics for a 2-link planar arm
+4. Solve a simple differential equation for robot motion
+
+## Further Reading
+
+- *Modern Robotics* by Lynch and Park
+- *Introduction to Robotics: Mechanics and Control* by Craig
+- Linear algebra and calculus review resources
+
+## Next Steps
+
+Now that you understand the mathematical foundations, you're ready to move on to [Chapter 4: Physics for Robotics](./ch04-physics-robotics.mdx) where we'll apply these concepts to physical systems.

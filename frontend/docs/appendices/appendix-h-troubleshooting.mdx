@@ -1,0 +1,139 @@
+---
+id: appendix-h-troubleshooting
+title: Appendix H - Troubleshooting Guide
+description: Common problems and solutions for robotics development and deployment.
+sidebar_label: H. Troubleshooting
+sidebar_position: 8
+category: troubleshooting
+format: list
+keywords: [troubleshooting, debugging, common issues, solutions]
+---
+
+# Appendix H: Troubleshooting Guide
+
+Common problems and solutions for robotics development, simulation, and deployment.
+
+## ROS 2 Issues
+
+### Problem: "Package not found" error
+**Symptoms**: `ros2 run` or `ros2 launch` cannot find your package
+
+**Solutions**:
+1. Source the workspace: `source install/setup.bash`
+2. Verify package exists: `ros2 pkg list | grep your_package`
+3. Rebuild: `colcon build --packages-select your_package`
+4. Check `package.xml` and `CMakeLists.txt` configuration
+
+### Problem: Node communication not working
+**Symptoms**: Topics/services exist but no data transfer
+
+**Solutions**:
+1. Verify DDS communication: `ros2 doctor --report`
+2. Check network settings (firewall, localhost vs. external)
+3. Verify QoS settings match between publisher and subscriber
+4. Use `ros2 topic echo` to monitor data flow
+
+### Problem: "DDS implementation not found"
+**Symptoms**: ROS 2 fails to start, complains about middleware
+
+**Solutions**:
+1. Install a DDS implementation: `sudo apt install ros-jazzy-rmw-cyclonedds-cpp`
+2. Set RMW implementation: `export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp`
+3. Verify installation: `ros2 doctor`
+
+## Gazebo Simulation Issues
+
+### Problem: Gazebo crashes or freezes
+**Symptoms**: Gazebo becomes unresponsive or terminates unexpectedly
+
+**Solutions**:
+1. Check GPU drivers are up to date
+2. Reduce physics update rate in world file
+3. Simplify robot model (reduce mesh complexity)
+4. Increase available system memory
+5. Use headless mode for testing: `gzserver` only
+
+### Problem: Robot model not loading correctly
+**Symptoms**: Robot appears black, missing textures, or incorrect geometry
+
+**Solutions**:
+1. Verify URDF syntax: `check_urdf model.urdf`
+2. Check file paths in URDF are correct (absolute vs. relative)
+3. Ensure mesh files (.stl, .dae) exist at specified locations
+4. Validate Xacro macros: `xacro model.xacro > expanded.urdf`
+
+## Hardware Interface Issues
+
+### Problem: Cannot access serial port
+**Symptoms**: "Permission denied" when opening `/dev/ttyUSB0` or `/dev/ttyACM0`
+
+**Solutions**:
+1. Add user to dialout group: `sudo usermod -a -G dialout $USER`
+2. Log out and log back in
+3. Check device permissions: `ls -l /dev/ttyUSB0`
+4. Try with sudo temporarily to verify (not for production!)
+
+### Problem: USB camera not detected
+**Symptoms**: OpenCV or ROS cannot find camera
+
+**Solutions**:
+1. List video devices: `v4l2-ctl --list-devices`
+2. Test with: `cheese` or `ffplay /dev/video0`
+3. Install v4l-utils: `sudo apt install v4l-utils`
+4. Check USB bandwidth (use USB 3.0 ports for high-resolution cameras)
+
+## Build and Compilation Issues
+
+### Problem: CMake configuration fails
+**Symptoms**: `colcon build` fails during CMake configuration
+
+**Solutions**:
+1. Install missing dependencies: `rosdep install --from-paths src --ignore-src -y`
+2. Clear build artifacts: `rm -rf build install log`
+3. Check CMakeLists.txt for errors
+4. Verify required packages are installed
+
+### Problem: Python package import errors
+**Symptoms**: `ModuleNotFoundError` or `ImportError`
+
+**Solutions**:
+1. Check PYTHONPATH: `echo $PYTHONPATH`
+2. Install with pip: `pip3 install package_name`
+3. For ROS packages, ensure setup.py is correct
+4. Source workspace after building Python packages
+
+## Performance Issues
+
+### Problem: High CPU usage
+**Symptoms**: Robot system becomes slow, high load average
+
+**Solutions**:
+1. Profile with `top` or `htop` to identify culprit
+2. Reduce sensor update rates
+3. Optimize algorithms (use vectorized operations)
+4. Offload computation to GPU if available
+5. Use multi-threading/multi-processing wisely
+
+### Problem: Real-time constraints violated
+**Symptoms**: Control loop timing inconsistent, jitter
+
+**Solutions**:
+1. Use real-time kernel: `sudo apt install linux-lowlatency`
+2. Set process priority: `nice` or `chrt`
+3. Disable CPU frequency scaling
+4. Minimize background processes
+5. Use lock-free data structures
+
+## Network and Communication Issues
+
+### Problem: High latency in distributed systems
+**Symptoms**: Delayed response, outdated sensor data
+
+**Solutions**:
+1. Use wired Ethernet instead of WiFi
+2. Configure QoS for "best-effort" on high-frequency topics
+3. Enable DDS discovery optimization
+4. Reduce message payload size
+5. Use compression for large messages
+
+[Content to be expanded with more scenarios and detailed solutions]

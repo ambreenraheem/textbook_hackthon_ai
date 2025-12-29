@@ -1,0 +1,100 @@
+---
+id: appendix-c-cpp-guide
+title: Appendix C - C++ Programming Guide for Robotics
+description: Modern C++ patterns and best practices for high-performance robotics applications.
+sidebar_label: C. C++ Guide
+sidebar_position: 3
+category: language-guide
+format: narrative
+keywords: [C++, programming, rclcpp, performance, robotics]
+---
+
+# Appendix C: C++ Programming Guide for Robotics
+
+Modern C++ (C++17/20) patterns for high-performance robotics development.
+
+## C++ for ROS 2
+
+### Basic Node Structure (rclcpp)
+```cpp
+#include "rclcpp/rclcpp.hpp"
+#include "geometry_msgs/msg/twist.hpp"
+
+class MyRobotNode : public rclcpp::Node {
+public:
+    MyRobotNode() : Node("my_robot_node") {
+        publisher_ = this->create_publisher<geometry_msgs::msg::Twist>("cmd_vel", 10);
+        timer_ = this->create_wall_timer(
+            std::chrono::milliseconds(100),
+            std::bind(&MyRobotNode::timer_callback, this));
+    }
+
+private:
+    void timer_callback() {
+        auto message = geometry_msgs::msg::Twist();
+        message.linear.x = 0.5;
+        publisher_->publish(message);
+    }
+
+    rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr publisher_;
+    rclcpp::TimerBase::SharedPtr timer_;
+};
+
+int main(int argc, char * argv[]) {
+    rclcpp::init(argc, argv);
+    rclcpp::spin(std::make_shared<MyRobotNode>());
+    rclcpp::shutdown();
+    return 0;
+}
+```
+
+## Modern C++ Features for Robotics
+
+### Smart Pointers
+```cpp
+#include <memory>
+
+// Use shared_ptr for shared ownership
+auto robot = std::make_shared<RobotController>();
+
+// Use unique_ptr for exclusive ownership
+auto sensor = std::make_unique<LidarSensor>();
+```
+
+### Lambda Functions
+```cpp
+auto callback = [this](const sensor_msgs::msg::LaserScan::SharedPtr msg) {
+    process_lidar_data(msg);
+};
+subscription_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
+    "scan", 10, callback);
+```
+
+### Move Semantics
+```cpp
+std::vector<double> large_data = generate_data();
+process_data(std::move(large_data));  // Efficient transfer
+```
+
+## Eigen Library for Linear Algebra
+
+```cpp
+#include <Eigen/Dense>
+
+Eigen::Matrix3d rotation;
+rotation = Eigen::AngleAxisd(angle, Eigen::Vector3d::UnitZ());
+
+Eigen::Vector3d position(1.0, 2.0, 3.0);
+Eigen::Vector3d transformed = rotation * position;
+```
+
+## Best Practices
+
+- Use RAII for resource management
+- Prefer const correctness
+- Avoid raw pointers; use smart pointers
+- Leverage STL algorithms
+- Profile before optimizing
+- Use const references to avoid copies
+
+[Content to be expanded with more patterns and examples]

@@ -1,0 +1,948 @@
+---
+id: ch25-industrial
+title: Chapter 25 - Industrial Robotics Applications
+description: Explore industrial automation, manufacturing, and quality control applications.
+sidebar_label: Ch 25. Industrial Robotics
+sidebar_position: 1
+keywords: [industrial robotics, automation, manufacturing, quality control]
+difficulty: intermediate
+estimatedReadingTime: 25
+---
+
+# Chapter 25: Industrial Robotics Applications
+
+## Learning Objectives
+
+By the end of this chapter, you will be able to:
+- Understand industrial robot applications across manufacturing sectors
+- Design automation workflows for assembly, welding, and material handling
+- Implement quality control systems with vision-guided robotics
+- Address safety and compliance requirements (ISO 10218:2025)
+- Evaluate ROI and integration strategies for industrial deployments
+
+## Introduction
+
+Industrial robotics represents the largest and most mature application domain for Physical AI systems. From automotive assembly lines to electronics manufacturing, robots have transformed how we make products—increasing precision, consistency, and throughput while reducing costs and workplace injuries.
+
+In 2025, the industrial robotics landscape is experiencing a profound shift from traditional fixed automation to **adaptive, AI-driven, and increasingly humanoid systems**. Investment in industrial robotics surged to **$7.3 billion in H1 2025**, driven by major deployments of collaborative and humanoid robots in manufacturing environments.
+
+### Market Overview
+
+The industrial robot market is projected to:
+- Reach **$17 billion in 2025**, growing to **$19.6 billion by 2030**
+- Humanoid robot market will grow from **$70 million (2025)** to **$6.5 billion (2030)**
+- Global robot density: 162 units per 10,000 employees (manufacturing average, 2024)
+
+### The Shift to Autonomy
+
+Traditional industrial robots follow pre-programmed paths in highly structured environments. The 2025 generation moves toward **autonomy**:
+
+| Traditional Automation | 2025 Autonomous Robotics |
+|------------------------|--------------------------|
+| Fixed programming | AI-driven task learning |
+| Structured environments | Adaptable to variations |
+| Safety cages required | Collaborative, cage-free operation |
+| Single-purpose | Multi-task capable |
+| Difficult reconfiguration | Rapid re-tasking |
+
+## Types of Industrial Robots
+
+### 1. Articulated Robots (6-Axis)
+
+**Design**: Rotational joints mimicking human arm structure with 6 degrees of freedom (shoulder, elbow, wrist motions)
+
+**Characteristics:**
+- Most versatile and widely deployed type
+- Reach: 0.5m to 3m+ depending on model
+- Payload: 5kg to 2,300kg
+- Typical accuracy: ±0.02mm to ±0.5mm
+
+**Primary Applications:**
+- **Spot Welding**: Automotive body assembly (BMW, Ford, GM)
+- **Arc Welding**: Complex weld paths with real-time seam tracking
+- **Material Handling**: Bin picking, palletizing, machine tending
+- **Painting & Coating**: Consistent coverage with teach-by-demonstration
+- **Assembly**: Component installation requiring complex motions
+
+**Leading Manufacturers**: ABB, FANUC, KUKA, Yaskawa, Kawasaki
+
+**Example Use Case**: Automotive spot welding robots perform 3,000-5,000 welds per vehicle with cycle times under 60 seconds per weld.
+
+### 2. SCARA Robots (Selective Compliance Assembly Robot Arm)
+
+**Design**: 3-4 axis robot with vertical rotational joints and a prismatic vertical axis
+
+**Characteristics:**
+- Fixed base with swiveling jointed arm
+- Fast, precise horizontal motion
+- Rigid in Z-axis, compliant in XY plane
+- Compact footprint, small workspace
+- Payload: 1-20kg typical
+- Repeatability: ±0.01mm
+
+**Primary Applications:**
+- **Electronics Assembly**: PCB component placement, screw driving
+- **Packaging**: High-speed product loading into containers
+- **Pick-and-Place**: Sorting, transferring between conveyors
+- **Biomedical**: Lab automation, sample handling
+
+**Advantages**: High speed (cycle times `<1 second`), low cost, easy programming
+
+**Limitations**: Limited to 2D horizontal workspace, low payloads
+
+### 3. Delta Robots (Parallel Arm)
+
+**Design**: Three or four parallel arms connected to a fixed base, forming a delta (Δ) shape
+
+**Characteristics:**
+- All motors fixed on frame (lightweight moving parts)
+- Extremely fast motion (>150 picks/minute)
+- High acceleration (10-15 g)
+- Small workspace (typically Ø600-1200mm cylinder)
+- Payload: 0.5-15kg
+- Repeatability: ±0.1mm
+
+**Primary Applications:**
+- **Food Packaging**: Pick-and-place of chocolates, baked goods, produce
+- **Pharmaceutical**: Sorting pills, filling vials
+- **Electronics**: Component sorting at high speeds
+- **Quality Inspection**: Rapid part orientation and imaging
+
+**Example Performance**: Vision-guided delta robot sorting 300 parts/minute with 99.9% accuracy.
+
+### 4. Collaborative Robots (Cobots)
+
+**Design**: Simplified articulated robots with force-torque sensing and speed/separation monitoring
+
+**Characteristics:**
+- Designed for safe human proximity (no safety cages)
+- Payload: 3-35kg typical
+- Slower speeds than industrial robots (≤1 m/s in collaborative mode)
+- Easy programming (teach-by-demonstration)
+- Built-in safety features (power and force limiting)
+
+**Primary Applications:**
+- **Quality Inspection**: Holding parts for operator measurement
+- **Machine Tending**: Loading/unloading CNC machines
+- **Light Assembly**: Screwdriving, component insertion
+- **Packaging**: Secondary packaging, kitting
+
+**Leading Models**: Universal Robots (UR3/5/10/16/20/30), ABB GoFa/SWIFTI, FANUC CRX series, KUKA LBR iisy
+
+**Safety Standard**: ISO 10218-2:2025 defines four collaborative operation modes:
+1. Safety-rated monitored stop
+2. Hand guiding
+3. Speed and separation monitoring
+4. Power and force limiting
+
+### 5. Humanoid Robots in Manufacturing (2025 Innovation)
+
+**Design**: Bipedal robots with human-like morphology, capable of navigating factory floors and using standard tools
+
+**Characteristics:**
+- Height: 165-180cm (human scale)
+- Payload: 20-30kg arms, 50kg+ total carrying capacity
+- Mobility: Walking, climbing stairs, opening doors
+- Dexterity: 5-7 DOF arms with multi-finger grippers
+- AI-driven perception and task planning
+
+**Pilot Deployments (2025):**
+- **Tesla Optimus**: Assembling components at Gigafactory Texas
+- **BMW Manufacturing**: Figure 02 robots handling sheet metal
+- **Mercedes-Benz**: Assembly line assistance, logistics
+- **Apptronik Apollo**: Material transport in automotive plants
+- **Agility Robotics Digit**: Warehouse and factory logistics
+
+**Applications:**
+- Walking between workstations (no conveyor infrastructure)
+- Using human tools (wrenches, drills, inspection equipment)
+- Variable task execution without reprogramming
+- Collaborative work in shared human spaces
+
+**Advantages over Fixed Robots:**
+- No fixed installation costs
+- Adaptable to existing factory layouts
+- Can handle diverse tasks across facility
+- Easier redeployment as production changes
+
+**Current Limitations:**
+- Higher cost per unit ($90,000-$150,000+)
+- Lower speed and precision than specialized robots
+- Battery runtime constraints (2-4 hours typical)
+- Still in pilot phase; widespread adoption expected 2026-2028
+
+## Manufacturing Applications
+
+### Assembly Operations
+
+**Precision Component Assembly:**
+Robots excel at repetitive assembly tasks requiring consistent quality:
+
+- **Automotive**: Engine assembly, transmission installation, seat mounting
+- **Electronics**: PCB assembly, connector insertion, housing assembly
+- **Aerospace**: Fuselage panel installation, wiring harness routing
+- **Medical Devices**: Sterile assembly of syringes, diagnostic equipment
+
+**Vision-Guided Assembly:**
+Modern systems integrate 2D/3D vision for part localization and orientation:
+
+```python
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import Image, PointCloud2
+from geometry_msgs.msg import PoseStamped
+from cv_bridge import CvBridge
+import cv2
+import numpy as np
+
+class VisionGuidedAssembly(Node):
+    """ROS 2 node for vision-guided robotic assembly"""
+
+    def __init__(self):
+        super().__init__('vision_guided_assembly')
+
+        self.bridge = CvBridge()
+
+        # Subscriptions
+        self.image_sub = self.create_subscription(
+            Image, '/camera/image_raw', self.image_callback, 10
+        )
+
+        # Publishers
+        self.target_pose_pub = self.create_publisher(
+            PoseStamped, '/robot/target_pose', 10
+        )
+
+        # Object detection model (loaded separately)
+        self.detector = self.load_object_detector()
+
+        self.get_logger().info('Vision-guided assembly node started')
+
+    def load_object_detector(self):
+        """Load pre-trained object detection model"""
+        # Load your trained model (e.g., YOLO, Faster R-CNN)
+        # Return model instance
+        pass
+
+    def image_callback(self, msg):
+        """Process camera images and detect assembly parts"""
+
+        # Convert ROS image to OpenCV format
+        cv_image = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
+
+        # Detect objects (parts to assemble)
+        detections = self.detect_parts(cv_image)
+
+        if detections:
+            # Get highest confidence detection
+            best_detection = max(detections, key=lambda x: x['confidence'])
+
+            # Estimate 6D pose (position + orientation)
+            pose = self.estimate_pose(best_detection, cv_image)
+
+            # Publish target pose to robot controller
+            pose_msg = self.create_pose_message(pose)
+            self.target_pose_pub.publish(pose_msg)
+
+            # Visualize detection
+            self.visualize_detection(cv_image, best_detection, pose)
+
+    def detect_parts(self, image):
+        """Detect assembly parts in image"""
+        # Run object detection
+        # Returns: list of detections with bounding boxes, classes, confidences
+        detections = []
+
+        # Example detection (replace with actual model inference)
+        # detections.append({
+        #     'class': 'connector_type_A',
+        #     'bbox': [x, y, w, h],
+        #     'confidence': 0.95
+        # })
+
+        return detections
+
+    def estimate_pose(self, detection, image):
+        """Estimate 6D pose from 2D detection"""
+
+        # Extract object region
+        x, y, w, h = detection['bbox']
+        roi = image[y:y+h, x:x+w]
+
+        # Method 1: PnP with known 3D model
+        # object_points_3d = self.get_3d_model(detection['class'])
+        # image_points_2d = self.extract_keypoints(roi)
+        # pose = cv2.solvePnP(object_points_3d, image_points_2d, camera_matrix, dist_coeffs)
+
+        # Method 2: Deep learning 6D pose estimation
+        # pose = self.pose_network.predict(roi)
+
+        # Placeholder pose (replace with actual estimation)
+        pose = {
+            'position': {'x': 0.5, 'y': 0.2, 'z': 0.3},
+            'orientation': {'x': 0.0, 'y': 0.0, 'z': 0.0, 'w': 1.0}
+        }
+
+        return pose
+
+    def create_pose_message(self, pose):
+        """Convert pose dict to ROS message"""
+        msg = PoseStamped()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = 'camera_link'
+
+        msg.pose.position.x = pose['position']['x']
+        msg.pose.position.y = pose['position']['y']
+        msg.pose.position.z = pose['position']['z']
+
+        msg.pose.orientation.x = pose['orientation']['x']
+        msg.pose.orientation.y = pose['orientation']['y']
+        msg.pose.orientation.z = pose['orientation']['z']
+        msg.pose.orientation.w = pose['orientation']['w']
+
+        return msg
+
+    def visualize_detection(self, image, detection, pose):
+        """Draw detection and pose on image"""
+
+        # Draw bounding box
+        x, y, w, h = detection['bbox']
+        cv2.rectangle(image, (x, y), (x+w, y+h), (0, 255, 0), 2)
+
+        # Draw label
+        label = f"{detection['class']} ({detection['confidence']:.2f})"
+        cv2.putText(image, label, (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+        # Display
+        cv2.imshow('Vision Guided Assembly', image)
+        cv2.waitKey(1)
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = VisionGuidedAssembly()
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+### Welding Applications
+
+**Spot Welding (Resistance Welding):**
+- Used extensively in automotive body assembly
+- Robots position electrodes with high repeatability (±0.1mm)
+- Typical cycle: Position (0.5s) → Weld (0.3s) → Retract (0.5s) = ~1.3s total
+- Quality monitoring via force sensing and weld nugget inspection
+
+**Arc Welding (MIG/TIG/Plasma):**
+- Complex 3D weld paths requiring 6-axis articulation
+- Real-time seam tracking using laser/vision sensors
+- Adaptive control adjusts voltage, wire feed, travel speed
+- Applications: Structural steel, shipbuilding, pressure vessels
+
+**Welding Parameters Control:**
+
+```python
+class AdaptiveWeldingController:
+    """Control welding parameters based on sensor feedback"""
+
+    def __init__(self, robot_interface, welding_power_supply):
+        self.robot = robot_interface
+        self.welder = welding_power_supply
+
+        # Nominal parameters (material-dependent)
+        self.voltage = 24.0  # Volts
+        self.wire_feed_speed = 5.0  # m/min
+        self.travel_speed = 0.3  # m/s
+        self.gas_flow = 15.0  # L/min (CO2/Argon mix)
+
+        # Seam tracking sensor
+        self.seam_tracker = SeamTrackingSensor()
+
+    def execute_weld(self, weld_path):
+        """Execute weld with adaptive control"""
+
+        # Start welding process
+        self.welder.arc_on(self.voltage, self.wire_feed_speed)
+        self.welder.set_gas_flow(self.gas_flow)
+
+        for waypoint in weld_path:
+            # Get seam deviation from sensor
+            lateral_deviation, height_deviation = self.seam_tracker.get_deviation()
+
+            # Adjust robot path
+            corrected_waypoint = self.correct_waypoint(waypoint, lateral_deviation, height_deviation)
+
+            # Adjust welding parameters based on joint geometry
+            adjusted_voltage, adjusted_wire_speed = self.adjust_parameters(height_deviation)
+
+            # Move robot
+            self.robot.move_linear(corrected_waypoint, speed=self.travel_speed)
+
+            # Update welding parameters
+            self.welder.set_voltage(adjusted_voltage)
+            self.welder.set_wire_feed_speed(adjusted_wire_speed)
+
+        # End welding
+        self.welder.arc_off()
+
+    def correct_waypoint(self, waypoint, lateral_dev, height_dev):
+        """Apply seam tracking correction to waypoint"""
+        corrected = waypoint.copy()
+        corrected['y'] += lateral_dev  # Lateral correction
+        corrected['z'] += height_dev    # Height correction
+        return corrected
+
+    def adjust_parameters(self, height_deviation):
+        """Adjust voltage and wire speed based on joint gap"""
+        # Wider gap requires more heat input
+        voltage_adjustment = height_deviation * 2.0  # V/mm
+        wire_speed_adjustment = height_deviation * 0.5  # (m/min)/mm
+
+        return (
+            self.voltage + voltage_adjustment,
+            self.wire_feed_speed + wire_speed_adjustment
+        )
+```
+
+### Material Handling
+
+**Palletizing:**
+- Stacking products on pallets in optimized patterns
+- Payload: 50-200kg typical for industrial palletizers
+- Throughput: 1,000-3,000 cycles/hour
+- Vision-guided depalletizing for mixed SKU picking
+
+**Machine Tending:**
+- Loading raw materials into CNC machines
+- Removing finished parts
+- In-process measurement and quality checks
+- Coordinated operation with machine cycles
+
+**Bin Picking:**
+Modern systems use 3D vision for unstructured picking:
+
+```python
+import open3d as o3d
+import numpy as np
+
+class BinPickingSystem:
+    """3D vision-guided bin picking"""
+
+    def __init__(self, robot_interface, camera_interface):
+        self.robot = robot_interface
+        self.camera = camera_interface
+
+    def execute_pick(self):
+        """Identify and pick part from unstructured bin"""
+
+        # 1. Capture 3D point cloud
+        point_cloud = self.camera.capture_point_cloud()
+
+        # 2. Segment parts from bin
+        part_clusters = self.segment_parts(point_cloud)
+
+        # 3. Select best picking candidate
+        best_part = self.select_pick_candidate(part_clusters)
+
+        # 4. Plan grasp pose
+        grasp_pose = self.plan_grasp(best_part)
+
+        # 5. Execute pick
+        self.robot.move_to_pre_grasp(grasp_pose)
+        self.robot.move_to_grasp(grasp_pose)
+        self.robot.close_gripper()
+        self.robot.move_to_post_grasp()
+
+        # 6. Verify grasp success
+        if self.robot.gripper_has_part():
+            self.robot.move_to_place_location()
+            self.robot.open_gripper()
+            return True
+        else:
+            return False
+
+    def segment_parts(self, point_cloud):
+        """Segment individual parts from point cloud"""
+
+        # Remove bin plane
+        plane_model, inliers = point_cloud.segment_plane(
+            distance_threshold=0.01,
+            ransac_n=3,
+            num_iterations=1000
+        )
+        parts_cloud = point_cloud.select_by_index(inliers, invert=True)
+
+        # Cluster remaining points (DBSCAN)
+        labels = np.array(parts_cloud.cluster_dbscan(eps=0.02, min_points=10))
+
+        # Extract clusters
+        clusters = []
+        for label in set(labels):
+            if label == -1:
+                continue  # Noise
+            cluster_indices = np.where(labels == label)[0]
+            cluster = parts_cloud.select_by_index(cluster_indices)
+            clusters.append(cluster)
+
+        return clusters
+
+    def select_pick_candidate(self, clusters):
+        """Select best part to pick based on accessibility"""
+
+        best_cluster = None
+        best_score = -float('inf')
+
+        for cluster in clusters:
+            # Calculate accessibility score
+            centroid = cluster.get_center()
+            height = centroid[2]  # Higher parts are more accessible
+            density = len(cluster.points)
+
+            # Score: prefer higher, well-segmented parts
+            score = height * 10 - (1.0 / density) * 0.01
+
+            if score > best_score:
+                best_score = score
+                best_cluster = cluster
+
+        return best_cluster
+
+    def plan_grasp(self, part_cluster):
+        """Generate 6D grasp pose for part"""
+
+        # Get part centroid
+        centroid = part_cluster.get_center()
+
+        # Estimate surface normal (simplified)
+        part_cluster.estimate_normals()
+        normals = np.asarray(part_cluster.normals)
+        mean_normal = np.mean(normals, axis=0)
+        mean_normal /= np.linalg.norm(mean_normal)
+
+        # Grasp from top with normal-aligned approach
+        grasp_pose = {
+            'position': centroid + mean_normal * 0.05,  # 5cm above surface
+            'orientation': self.normal_to_quaternion(mean_normal)
+        }
+
+        return grasp_pose
+
+    def normal_to_quaternion(self, normal):
+        """Convert surface normal to quaternion (simplified)"""
+        # Align gripper Z-axis with normal
+        # (Simplified; full implementation requires proper rotation calculation)
+        return [0.0, 0.0, 0.0, 1.0]
+```
+
+### Quality Control and Inspection
+
+**Vision-Based Inspection:**
+Automated systems detect defects, measure dimensions, and verify assembly:
+
+- **Surface Defects**: Scratches, dents, discoloration (automotive paint inspection)
+- **Dimensional Verification**: CMM (Coordinate Measuring Machine) integration
+- **Component Presence**: Verify all parts installed correctly
+- **OCR/Barcode Reading**: Traceability and inventory management
+
+**Inspection Throughput**: 10-60 seconds per part typical, varies by complexity
+
+**Example: Automated Visual Inspection System**
+
+```python
+class QualityInspectionSystem:
+    """Automated quality control with deep learning"""
+
+    def __init__(self):
+        self.defect_detector = self.load_defect_model()
+        self.measurement_system = MeasurementSystem()
+
+    def load_defect_model(self):
+        """Load trained defect detection model"""
+        # Load model (e.g., semantic segmentation for defect localization)
+        import torch
+        model = torch.load('defect_detector.pth')
+        model.eval()
+        return model
+
+    def inspect_part(self, part_id, images):
+        """Complete inspection workflow"""
+
+        inspection_result = {
+            'part_id': part_id,
+            'timestamp': time.time(),
+            'pass': True,
+            'defects': [],
+            'measurements': {}
+        }
+
+        # 1. Visual defect detection
+        for view_name, image in images.items():
+            defects = self.detect_defects(image)
+            if defects:
+                inspection_result['defects'].extend(defects)
+                inspection_result['pass'] = False
+
+        # 2. Dimensional measurements
+        measurements = self.measurement_system.measure(part_id)
+        inspection_result['measurements'] = measurements
+
+        # Check tolerances
+        for dim, value in measurements.items():
+            spec = self.get_specification(part_id, dim)
+            if not (spec['min'] <= value <= spec['max']):
+                inspection_result['pass'] = False
+                inspection_result['defects'].append({
+                    'type': 'out_of_spec',
+                    'dimension': dim,
+                    'value': value,
+                    'spec': spec
+                })
+
+        # 3. Generate report
+        self.log_inspection(inspection_result)
+
+        return inspection_result
+
+    def detect_defects(self, image):
+        """Detect surface defects using deep learning"""
+        # Preprocess image
+        input_tensor = self.preprocess(image)
+
+        # Run inference
+        with torch.no_grad():
+            output = self.defect_detector(input_tensor)
+
+        # Post-process detections
+        defects = self.postprocess_detections(output)
+
+        return defects
+
+    def get_specification(self, part_id, dimension):
+        """Retrieve dimensional tolerances from database"""
+        # Query specifications database
+        spec = {
+            'min': 100.0 - 0.05,  # mm
+            'max': 100.0 + 0.05,  # ±0.05mm tolerance
+            'nominal': 100.0
+        }
+        return spec
+
+    def log_inspection(self, result):
+        """Log inspection results for traceability"""
+        # Save to database, generate certificates, trigger alerts if failed
+        pass
+```
+
+## Safety Standards and Compliance
+
+### ISO 10218:2025 - Industrial Robot Safety
+
+The **ISO 10218 standard** was significantly updated in 2025, integrating collaborative robot requirements and adding cybersecurity provisions.
+
+**Two-Part Standard:**
+
+1. **ISO 10218-1:2025**: Safety requirements for robot design and construction
+2. **ISO 10218-2:2025**: Safety requirements for robot system integration and use
+
+**Key Changes in 2025 Revision:**
+
+**Integration of Collaborative Requirements:**
+- Previous **ISO/TS 15066** (collaborative robot technical specification) has been integrated into ISO 10218-2:2025
+- Terminology shift: "collaborative application" replaces "collaborative robot" and "collaborative operation"
+- Recognition that only the **actual use** of a robot (not the robot itself) can be designed and validated as collaborative
+
+**Four Collaborative Operation Modes:**
+
+| Mode | Description | When to Use |
+|------|-------------|-------------|
+| **Safety-rated Monitored Stop** | Robot stops when human enters workspace | Operator needs periodic access |
+| **Hand Guiding** | Operator physically guides robot end-effector | Teaching, small-batch production |
+| **Speed and Separation Monitoring** | Robot slows/stops maintaining minimum separation | Operator works nearby but not in contact |
+| **Power and Force Limiting** | Robot designed with inherent force limits | Contact expected/acceptable |
+
+**Cybersecurity Requirements (New in 2025):**
+- Industrial robots must have security features to prevent unauthorized access
+- Secure communication protocols for networked robots
+- Access control and authentication mechanisms
+- Protection against malware and cyber attacks
+
+**Functional Safety Requirements:**
+- Performance Level (PL) d or Safety Integrity Level (SIL) 2 required for safety functions
+- Redundant safety circuits for critical functions
+- Regular safety validation and testing
+
+### Risk Assessment Process
+
+Before deploying industrial robots, comprehensive risk assessment is mandatory:
+
+```
+1. Task Analysis
+   ↓
+2. Hazard Identification
+   - Mechanical hazards (crushing, impact, entanglement)
+   - Electrical hazards
+   - Thermal hazards (welding, heated parts)
+   - Noise
+   ↓
+3. Risk Estimation
+   - Severity of harm
+   - Probability of occurrence
+   ↓
+4. Risk Evaluation
+   - Compare against acceptable risk threshold
+   ↓
+5. Risk Reduction Measures (hierarchy):
+   a) Inherently safe design (eliminate hazard)
+   b) Safeguarding (guards, light curtains, scanners)
+   c) Supplementary protective measures (training, PPE)
+   ↓
+6. Validation & Documentation
+```
+
+**Example Risk Reduction Hierarchy:**
+1. **Inherent Safety**: Use collaborative robot with force limiting instead of industrial robot
+2. **Safeguarding**: Install safety-rated laser scanners creating protective zones
+3. **Operational Procedures**: Train operators on emergency stop procedures
+4. **PPE**: Require safety glasses in robot cell
+
+## Case Studies
+
+### Case Study 1: Tesla Optimus in Manufacturing (2025)
+
+**Application**: Component assembly at Gigafactory Texas
+
+**Deployment:**
+- Multiple Optimus Gen 2 humanoid robots working on assembly line
+- Tasks: Sorting small parts, quality inspection, material transport
+- Integration with existing human workforce
+
+**Advantages:**
+- No fixed automation infrastructure required
+- Robots navigate factory floor like human workers
+- Quick redeployment between tasks as production needs change
+- Use standard tools and workstations
+
+**Results (Pilot Phase):**
+- Task completion time: 1.5-2x human speed initially
+- Improving with continuous learning from demonstrations
+- Reduced installation costs vs. traditional fixed automation
+- Successful integration with human team members
+
+**Challenges:**
+- Battery life limits shift length (2-3 hours, then swap/recharge)
+- Lower precision than dedicated industrial robots
+- Higher initial cost per unit ($100,000+ estimated)
+
+### Case Study 2: BMW Humanoid Manufacturing Pilot
+
+**Application**: Figure 02 robots handling sheet metal components
+
+**Scope:**
+- Metal sheet handling in body shop
+- Tasks requiring walking between stations
+- Collaborative work with human operators
+
+**Technology:**
+- AI-driven vision for part identification
+- Force control for gentle handling of large panels
+- Natural language task instructions via partnership with OpenAI
+
+**Status**: Pilot phase (2025), evaluating for broader deployment 2026
+
+### Case Study 3: Automotive Spot Welding (Traditional)
+
+**Scale**: 400+ robots in single assembly plant
+
+**Robots**: KUKA KR-series articulated robots with 150kg payload
+
+**Process:**
+- White body assembly (car frame construction)
+- 3,000-5,000 spot welds per vehicle
+- Cycle time: 60-90 seconds per car body
+- 99.8%+ weld quality consistency
+
+**Integration**:
+- Coordinated motion of multiple robots in tight spaces
+- Real-time quality monitoring via weld current/force sensors
+- Automatic tip dressing (electrode maintenance)
+- Synchronized with conveyor system
+
+**ROI**: Payback period 18-24 months through increased throughput and quality
+
+## Implementation Best Practices
+
+### 1. Application Selection
+
+**Good Candidates for Robot Automation:**
+- High volume, repetitive tasks (>10,000 cycles/year)
+- Ergonomically challenging for humans (heavy lifting, awkward postures)
+- Require consistent precision and quality
+- Hazardous environments (welding, painting, high heat)
+- Tasks with clear ROI (payback &lt;3 years)
+
+**Poor Candidates:**
+- High product variety, low volume
+- Frequent design changes
+- Extremely complex decision-making
+- Tasks requiring high dexterity and adaptability (until humanoid robots mature)
+
+### 2. Workflow Design
+
+**Key Principles:**
+1. **Design for Robot Capabilities**: Optimize part presentation, fixturing, and tolerances for robotic handling
+2. **Minimize Variability**: Reduce part variation to simplify programming and vision requirements
+3. **Error Recovery**: Plan for automatic error detection and recovery strategies
+4. **Human-Robot Interaction**: Clear zones, intuitive interfaces, emergency stop accessibility
+
+**Example Workflow: Automated Assembly Cell**
+
+```
+[Part Feeder] → [Vision Inspection] → [Robot Pick] → [Assembly Fixture]
+                                              ↓
+                                     [Quality Check] → [Pass/Fail Sorting]
+                                              ↓
+                                         [Packaging]
+```
+
+### 3. ROI Calculation
+
+**Cost Components:**
+
+**Initial Investment:**
+- Robot system: $50,000-$500,000 (depending on type and payload)
+- End-effector/tooling: $5,000-$50,000
+- Safety equipment: $10,000-$100,000
+- Integration labor: $20,000-$200,000
+- Training: $5,000-$20,000
+
+**Operating Costs (Annual):**
+- Maintenance: 5-10% of robot cost/year
+- Energy: $1,000-$5,000/year
+- Programming/setup: $10,000-$50,000/year
+
+**Savings:**
+- Labor replacement: $40,000-$80,000 per robot per shift (assuming 2-3 shift operation)
+- Quality improvement: Reduced scrap and rework
+- Throughput increase: Faster cycle times
+- Workplace safety: Reduced injury costs
+
+**Example ROI Calculation:**
+
+```
+Initial Investment: $200,000
+Annual Operating Cost: $20,000
+Annual Labor Savings: $120,000 (1.5 workers × $80,000)
+Annual Quality Savings: $15,000
+
+Net Annual Benefit: $120,000 + $15,000 - $20,000 = $115,000
+Payback Period: $200,000 / $115,000 = 1.74 years
+```
+
+### 4. System Integration
+
+**Integration Checklist:**
+- [ ] Robot mounting (floor, wall, ceiling, mobile base)
+- [ ] Power and compressed air supply
+- [ ] Safety systems (scanners, light curtains, e-stops, safety mats)
+- [ ] End-effector design and quick-change system
+- [ ] Vision system integration (lighting, cameras, calibration)
+- [ ] PLC/HMI integration for cell control
+- [ ] Material handling (conveyors, feeders, pallets)
+- [ ] Quality inspection equipment
+- [ ] Operator interface and training
+- [ ] Documentation and compliance certification
+
+## Practice Exercises
+
+### Exercise 1: Vision-Guided Pick and Place
+
+**Objective**: Implement a ROS 2-based vision-guided pick-and-place system
+
+**Requirements:**
+- Use 2D camera to detect objects on conveyor
+- Calculate grasp pose from object detection
+- Command robot to pick and place into bins
+- Handle detection errors gracefully
+
+**Evaluation Criteria:**
+- 95%+ successful pick rate
+- Cycle time &lt;5 seconds per pick
+- Proper error recovery (e.g., re-attempt failed picks)
+
+### Exercise 2: Collaborative Robot Safety Implementation
+
+**Objective**: Configure a collaborative robot cell complying with ISO 10218-2:2025
+
+**Requirements:**
+- Implement speed and separation monitoring using laser scanner
+- Configure safety zones (warning zone, protective zone)
+- Emergency stop system with safety-rated inputs
+- Operator training program
+- Risk assessment documentation
+
+**Deliverables:**
+- Safety system configuration file
+- Risk assessment report
+- Operator training materials
+
+### Exercise 3: Quality Inspection System
+
+**Objective**: Build automated visual inspection system
+
+**Requirements:**
+- Train defect detection model on provided dataset
+- Integrate with robot cell (part presentation and removal)
+- Log inspection results to database with images
+- Achieve 98%+ defect detection rate, &lt;5% false positive rate
+
+**Tech Stack:**
+- PyTorch or TensorFlow for defect detection
+- ROS 2 for robot integration
+- PostgreSQL for results database
+
+## Key Takeaways
+
+- Industrial robotics is the largest and most mature Physical AI application, with $17B+ market in 2025
+- **Four main robot types**: Articulated (versatile), SCARA (fast/precise), Delta (very fast), Collaborative (safe around humans)
+- **2025 trend**: Shift toward adaptive, AI-driven, and humanoid robots; major manufacturers piloting humanoid deployments
+- **Safety is paramount**: ISO 10218:2025 updated with collaborative robot requirements and cybersecurity provisions
+- **ROI drives adoption**: Typical payback 18-36 months through labor savings, quality improvement, and throughput gains
+- **Successful deployment** requires careful application selection, workflow design, safety compliance, and operator training
+
+## Further Reading
+
+### Standards and Specifications
+- [ISO 10218-1:2025 - Industrial Robot Safety](https://www.iso.org/standard/73933.html)
+- [ISO 10218-2:2025 - Robot System Integration Safety](https://www.iso.org/standard/73934.html)
+- [ANSI/RIA R15.06 - U.S. Robot Safety Standard](https://www.automate.org)
+
+### Industry Reports
+- [International Federation of Robotics - World Robotics 2025](https://ifr.org)
+- [Research and Markets - Industrial Robots Report 2025](https://www.researchandmarkets.com)
+
+### Robotics Associations
+- [Association for Advancing Automation (A3)](https://www.automate.org)
+- [Robotic Industries Association (RIA)](https://www.robotics.org)
+
+## Next Steps
+
+Continue to [Chapter 26: Service & Domestic Robots](./ch26-service-domestic.mdx) to explore consumer and service robot applications.
+
+For industrial robot programming reference, see [Appendix C: C++ Programming Guide](../appendices/appendix-c-cpp-guide.mdx) and [Appendix E: Hardware Comparison](../appendices/appendix-e-hardware-comparison.mdx).
+
+---
+
+## Sources
+
+- [Top 12 Humanoid Robots of 2025](https://humanoidroboticstechnology.com/articles/top-12-humanoid-robots-of-2025/)
+- [Industrial Robots Research Report 2025](https://www.globenewswire.com/news-release/2025/11/06/3182255/0/en/Industrial-Robots-Research-Report-2025-Humanoid-AI-Driven-and-Collaborative-Robotics-Set-New-Benchmark-for-Adaptive-Flexible-and-Smart-Manufacturing-Automation.html)
+- [Moving from Automation to Autonomy - Research Report 2025](https://www.businesswire.com/news/home/20251107524093/en)
+- [KUKA: Types of Industrial Robots](https://www.kuka.com/en-us/company/iimagazine/2022/from-delta-to-scara,-c-,-overview-of-industrial-robot-types)
+- [ISO 10218-1:2025 Robot Safety Standard](https://www.iso.org/standard/73933.html)
+- [A3: Updated ISO 10218 FAQ](https://www.automate.org/robotics/blogs/updated-iso-10218-faq)
+- [Collaborative Robot Safety Standards - Standard Bots](https://standardbots.com/blog/collaborative-robot-safety-standards)
+- [IFR: Top 5 Global Robotics Trends 2025](https://ifr.org/ifr-press-releases/news/top-5-global-robotics-trends-2025)
+- [Agibot 5,000th Mass-Produced Humanoid Robot](https://roboticsandautomationnews.com/2025/12/09/agibot-rolls-out-its-5000th-mass-produced-humanoid-robot/97500/)

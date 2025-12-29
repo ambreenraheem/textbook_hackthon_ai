@@ -1,0 +1,337 @@
+---
+id: ch02-humanoid-robotics
+title: Chapter 2 - Humanoid Robotics Overview
+description: Understand the design principles, history, and applications of humanoid robots.
+sidebar_label: Ch 2. Humanoid Robotics
+sidebar_position: 2
+keywords: [humanoid robots, bipedal locomotion, anthropomorphic design]
+difficulty: beginner
+estimatedReadingTime: 20
+---
+
+# Chapter 2: Humanoid Robotics Overview
+
+## Learning Objectives
+
+By the end of this chapter, you will be able to:
+- Understand the history and evolution of humanoid robotics
+- Identify key design principles for humanoid robot platforms
+- Recognize challenges in bipedal locomotion and whole-body control
+
+## Introduction to Humanoid Robotics
+
+Humanoid robots represent one of the most ambitious endeavors in Physical AI—creating machines that mimic human form and function. By replicating the human body's structure, humanoid robots can navigate human-designed environments, use tools built for human hands, and interact naturally with people.
+
+### Why Build Humanoid Robots?
+
+The humanoid form offers unique advantages:
+
+1. **Environment Compatibility**: Seamless operation in spaces designed for humans (stairs, doors, furniture)
+2. **Tool Use**: Ability to manipulate human tools without specialized redesign
+3. **Social Acceptance**: Natural, intuitive interaction with humans
+4. **Versatility**: General-purpose design adaptable to diverse tasks
+5. **Research Platform**: Understanding human biomechanics and cognition
+
+## History and Evolution
+
+### Early Pioneers (1970s-1990s)
+
+**WABOT-1 (1973)**
+- Developed at Waseda University, Japan
+- First full-scale anthropomorphic robot
+- Could walk, grip objects, and communicate in Japanese
+
+**Honda P-Series (1986-1993)**
+- Honda's first humanoid prototypes
+- Progressive improvements in walking stability
+- Foundation for ASIMO
+
+### Modern Era (2000-2015)
+
+**ASIMO (2000)**
+- Honda's Advanced Step in Innovative Mobility
+- 130cm tall, 54kg
+- Smooth walking, running, and stair climbing
+- Iconic demonstration platform influencing global research
+
+**NAO (2006)**
+- Aldebaran Robotics (now SoftBank Robotics)
+- 58cm tall, programmable platform
+- Widely used in education and research
+
+**Atlas (2013)**
+- Boston Dynamics' hydraulic humanoid
+- 1.8m tall, 80kg (later reduced to 75kg in electric version)
+- Demonstrated parkour, backflips, and complex terrain navigation
+
+### Contemporary Revolution (2020-Present)
+
+**Tesla Optimus (2021-Present)**
+- Designed for general labor tasks
+- Target: mass production at automotive scale
+- Focus on manufacturability and cost reduction
+
+**Figure 01 (2022-Present)**
+- Silicon Valley startup with OpenAI partnership
+- Targeting warehouse and manufacturing applications
+- Emphasis on AI-driven manipulation
+
+**1X NEO (2023-Present)**
+- Norwegian humanoid focusing on safe human environments
+- Biomimetic design with compliant actuators
+- Designed for home and light commercial use
+
+**Unitree H1 (2023-Present)**
+- Chinese company's affordable research platform
+- Fast walking speeds (up to 5 m/s demonstrated)
+- Open development ecosystem
+
+## Key Design Principles
+
+### Anthropomorphic Structure
+
+Humanoid robots typically feature:
+
+**Upper Body:**
+- Head with sensors (cameras, microphones)
+- Torso containing computing and power systems
+- Arms with 6-7 degrees of freedom (DOF) each
+- Hands with varying complexity (2-5 fingers)
+
+**Lower Body:**
+- Hip joint (3 DOF per side)
+- Knee joint (1 DOF per leg)
+- Ankle joint (2 DOF per foot)
+- Total: ~30-40 DOF for full-body humanoid
+
+### Actuation Technologies
+
+Different platforms employ various actuation strategies:
+
+| Actuation Type | Advantages | Disadvantages | Examples |
+|----------------|------------|---------------|----------|
+| **Electric Motors** | Precise control, efficient | Lower power density | NAO, Pepper |
+| **Hydraulic** | High power, fast response | Complex, potential leaks | Atlas (original) |
+| **Pneumatic** | Compliant, safe | Requires air supply | Some research platforms |
+| **Series Elastic** | Force control, shock absorption | More complex | ANYmal (quadruped) |
+
+### Sensor Integration
+
+Humanoid robots rely on multi-modal sensing:
+
+**Proprioception:**
+- Joint encoders (position, velocity)
+- Force/torque sensors at joints
+- Inertial Measurement Unit (IMU) for balance
+
+**Exteroception:**
+- Cameras (stereo, RGB-D, event-based)
+- LiDAR for spatial mapping
+- Tactile sensors in hands and feet
+- Microphones for audio processing
+
+### Computing Architecture
+
+Modern humanoids employ hierarchical computing:
+
+1. **High-Level Planning**: Cloud or onboard GPU for AI inference
+2. **Mid-Level Control**: Real-time OS for motion planning
+3. **Low-Level Control**: Fast embedded controllers for motor actuation (1-10 kHz)
+
+## Challenges in Humanoid Robotics
+
+### 1. Bipedal Locomotion
+
+Walking on two legs presents fundamental challenges:
+
+**Static vs. Dynamic Stability**
+- Static walking: Center of Mass (CoM) always over support polygon
+- Dynamic walking: CoM can momentarily exit support polygon
+- Trade-off: Stability vs. speed and efficiency
+
+**Balance Control**
+- Continuous micro-adjustments required (unlike wheeled robots)
+- Must handle external disturbances (pushes, uneven terrain)
+- Integration of vestibular (IMU) and visual feedback
+
+**Energy Efficiency**
+- Human walking: ~2 W/kg
+- Current humanoids: 10-50 W/kg
+- Significant room for improvement in efficiency
+
+### 2. Dexterous Manipulation
+
+Human-level grasping remains elusive:
+
+**Challenges:**
+- High DOF hands (human: 27 DOF) vs. robotic simplifications
+- Force sensing and control for delicate objects
+- Tactile feedback for slip detection
+- Generalization to novel objects
+
+**Current Approaches:**
+- Simplified grippers (parallel jaw, 3-finger)
+- Learning-based grasping from large datasets
+- Teleoperation for complex manipulations
+
+### 3. Whole-Body Control
+
+Coordinating all joints simultaneously:
+
+**Control Hierarchy:**
+- Task-space control (end-effector goals)
+- Joint-space control (actuator commands)
+- Constraint satisfaction (balance, collision avoidance)
+
+**Computational Challenges:**
+- Real-time inverse kinematics for 30+ DOF
+- Balancing multiple objectives (reaching while maintaining balance)
+- Robustness to model uncertainties
+
+### 4. Power and Autonomy
+
+Energy constraints limit deployment:
+
+**Current State:**
+- Battery capacity: 1-3 kWh typical
+- Operating time: 1-4 hours for mobile humanoids
+- Trade-off: Weight vs. runtime
+
+**Future Directions:**
+- Higher energy density batteries
+- Dynamic energy management
+- Wireless charging or battery swapping stations
+
+## Real-World Applications
+
+### Manufacturing and Logistics
+
+**Warehouses:**
+- Picking and packing items
+- Inventory management
+- Box and pallet handling
+
+**Assembly Lines:**
+- Component assembly
+- Quality inspection
+- Collaborative work with human operators
+
+### Healthcare and Assistance
+
+**Elder Care:**
+- Mobility assistance (helping stand, walk)
+- Medication reminders
+- Social companionship
+
+**Rehabilitation:**
+- Physical therapy guidance
+- Gait training assistance
+- Exercise monitoring
+
+### Service and Hospitality
+
+**Customer Service:**
+- Information desk attendants
+- Hotel concierge services
+- Retail assistance
+
+**Cleaning and Maintenance:**
+- Vacuuming and mopping
+- Window cleaning
+- Facility maintenance
+
+### Research and Education
+
+**Academic Research:**
+- Platform for studying human motion
+- Testing AI and control algorithms
+- Benchmark for manipulation tasks
+
+**STEM Education:**
+- Programming introduction
+- Robotics competitions
+- Interactive demonstrations
+
+## Leading Humanoid Platforms (2024-2025)
+
+### Commercial Platforms
+
+**Tesla Optimus**
+- Height: ~173 cm
+- Weight: ~73 kg
+- Focus: Industrial labor, household tasks
+- Status: Prototype demonstrations, limited deployment
+
+**Figure 01**
+- Height: ~167 cm
+- Weight: ~60 kg
+- Partnership with OpenAI for language grounding
+- Demonstrated: Autonomous object sorting, conversational interaction
+
+**Unitree H1**
+- Height: ~180 cm
+- Weight: ~47 kg
+- Speed: Up to 5 m/s walking
+- Price: ~$90,000 (research/developer version)
+
+**1X NEO**
+- Height: ~165 cm
+- Design: Soft, bio-inspired aesthetics
+- Focus: Safe home environments
+- Muscle-inspired actuators for compliance
+
+### Research Platforms
+
+**Boston Dynamics Atlas**
+- Height: 1.8 m
+- Weight: ~80 kg (hydraulic), ~75 kg (electric version)
+- Capabilities: Parkour, backflips, complex manipulation
+- Status: Research platform, not commercially available
+
+**NASA Valkyrie (R5)**
+- Height: 1.8 m
+- Weight: 125 kg
+- Designed for: Space exploration, disaster response
+- Status: Research platform at universities
+
+## The Path Forward
+
+### Near-Term (2025-2030)
+
+- Reliable operation in structured environments (factories, warehouses)
+- Limited household deployment for specific tasks
+- Improved energy efficiency and runtime
+- Cost reduction through scale manufacturing
+
+### Medium-Term (2030-2040)
+
+- General-purpose home assistants
+- Widespread use in healthcare and elder care
+- Human-level dexterity for common manipulation tasks
+- Natural language interaction and task planning
+
+### Long-Term (2040+)
+
+- Seamless human-robot collaboration in all domains
+- Comparable energy efficiency to human movement
+- True general intelligence for novel task adaptation
+- Ethical frameworks for robot rights and responsibilities
+
+## Key Takeaways
+
+- Humanoid robots mimic human form for compatibility with human environments and tools
+- Evolution spans 50+ years from WABOT-1 to modern platforms like Tesla Optimus and Figure 01
+- Key challenges include bipedal locomotion, dexterous manipulation, whole-body control, and energy efficiency
+- Applications range from manufacturing to healthcare to domestic assistance
+- The field is rapidly accelerating with significant investment from tech companies
+
+## What's Next?
+
+Having explored humanoid robotics conceptually, Chapter 3 dives into the **mathematical fundamentals** that underpin all robotic systems—transformation matrices, kinematics, and the linear algebra essential for controlling these complex machines.
+
+### Further Resources
+
+- **Research Labs**: MIT CSAIL, CMU Robotics Institute, ETH Zurich Robotic Systems Lab
+- **Companies**: Boston Dynamics, Tesla, Figure AI, 1X Technologies, Unitree Robotics
+- **Conferences**: IEEE-RAS Humanoids, ICRA (International Conference on Robotics and Automation)
+- **Open-Source**: ROS Humanoid packages, PyBullet simulation environments

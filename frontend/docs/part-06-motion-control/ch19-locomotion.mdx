@@ -1,0 +1,203 @@
+---
+id: ch19-locomotion
+title: Chapter 19 - Bipedal Locomotion
+description: Learn gait generation, balance control, and walking algorithms for humanoid robots.
+sidebar_label: Ch 19. Locomotion
+sidebar_position: 1
+keywords: [bipedal locomotion, gait, balance, walking, zero moment point]
+difficulty: advanced
+estimatedReadingTime: 40
+---
+
+# Chapter 19: Bipedal Locomotion
+
+## Learning Objectives
+
+By the end of this chapter, you will be able to:
+- Understand bipedal walking principles
+- Implement gait generation algorithms
+- Control balance using ZMP and other methods
+- Handle terrain adaptation and disturbances
+
+## Introduction
+
+Bipedal locomotion is one of the most challenging aspects of humanoid robotics. Walking on two legs requires sophisticated control algorithms, real-time balance adjustments, and the ability to handle diverse terrains and unexpected disturbances.
+
+## Fundamentals of Bipedal Walking
+
+### The Walking Cycle
+
+A typical walking cycle (gait) consists of two main phases:
+1. **Stance Phase**: One foot is in contact with the ground
+2. **Swing Phase**: The foot is lifted and moved forward
+
+### Key Concepts
+
+- **Center of Mass (CoM)**: The point where the robot's mass is concentrated
+- **Center of Pressure (CoP)**: The point on the ground where the vertical force is applied
+- **Zero Moment Point (ZMP)**: A stability criterion for bipedal walking
+
+## Gait Generation Algorithms
+
+### ZMP-Based Walking
+
+The Zero Moment Point criterion states that for stable walking, the ZMP must remain within the support polygon (the area defined by the feet in contact with the ground).
+
+### Video: Bipedal Walking Demonstration
+
+Watch this demonstration of humanoid robot locomotion to see these principles in action:
+
+import VideoEmbed from '@site/src/components/VideoEmbed';
+
+<VideoEmbed
+  url="https://www.youtube.com/watch?v=fn3KWM1kuAw"
+  title="Boston Dynamics Atlas - Humanoid Robot Walking Demo"
+  privacyEnhanced={true}
+  transcript={`
+This video demonstrates advanced bipedal locomotion capabilities of the Atlas humanoid robot.
+
+Key observations:
+- Dynamic balance maintenance during walking
+- Terrain adaptation and obstacle navigation
+- Recovery from external disturbances
+- Natural gait patterns similar to human walking
+- Real-time adjustment of foot placement
+
+The robot uses sophisticated control algorithms including:
+- Model Predictive Control (MPC) for trajectory planning
+- Zero Moment Point (ZMP) tracking for stability
+- Inertial Measurement Unit (IMU) feedback for balance
+- Vision-based terrain assessment
+
+Notice how the robot shifts its weight smoothly between feet and maintains its center of mass within the stability region throughout the walking cycle.
+  `}
+/>
+
+## Balance Control Methods
+
+### 1. Static Stability
+
+In static walking, the robot moves slowly enough that dynamics can be ignored. The center of mass projection must always fall within the support polygon.
+
+### 2. Dynamic Stability
+
+Dynamic walking allows faster, more natural motion by utilizing momentum. The ZMP criterion ensures dynamic stability:
+
+```
+ZMP = CoM - (h/g) × CoM_acceleration
+```
+
+Where:
+- `h` = height of center of mass
+- `g` = gravitational acceleration
+- `CoM_acceleration` = horizontal acceleration of center of mass
+
+### 3. Capture Point Theory
+
+The capture point is the location on the ground where the robot must place its foot to come to a complete stop. This concept is useful for:
+- Step planning
+- Push recovery
+- Emergency stopping
+
+## Terrain Adaptation
+
+### Uneven Surfaces
+
+Walking on uneven terrain requires:
+1. **Perception**: Detect terrain geometry using vision/lidar
+2. **Foot Placement**: Adjust step locations and orientations
+3. **Compliance**: Absorb impacts with compliant joints
+4. **Balance Recovery**: Quickly respond to unexpected terrain
+
+### Stairs and Slopes
+
+Special considerations for non-flat surfaces:
+- Adjust step height and length
+- Modify trunk orientation
+- Increase stability margins
+- Use preview control for known terrain
+
+## Disturbance Handling
+
+### Push Recovery
+
+When the robot is pushed, it must:
+1. Detect the disturbance (IMU sensors)
+2. Estimate the disturbance magnitude
+3. Execute recovery step (stepping strategy)
+4. Return to normal gait
+
+### Strategies
+
+- **Ankle Strategy**: Small disturbances, adjust ankle torque
+- **Hip Strategy**: Medium disturbances, bend at hips
+- **Stepping Strategy**: Large disturbances, take a recovery step
+
+## Implementation Example
+
+### Simplified Walking Controller Pseudocode
+
+```python
+def walking_controller():
+    while robot.is_walking():
+        # 1. Sense current state
+        current_pose = robot.get_pose()
+        imu_data = robot.get_imu()
+
+        # 2. Compute desired trajectory
+        desired_com = compute_com_trajectory()
+        desired_zmp = compute_zmp_reference()
+
+        # 3. Calculate foot placement
+        next_footstep = plan_footstep(desired_com, current_pose)
+
+        # 4. Generate joint trajectories
+        joint_angles = inverse_kinematics(next_footstep, desired_com)
+
+        # 5. Apply control
+        robot.set_joint_positions(joint_angles)
+
+        # 6. Check stability
+        if not is_stable(current_zmp, support_polygon):
+            execute_recovery_action()
+```
+
+## Advanced Topics
+
+### Model Predictive Control (MPC)
+
+MPC optimizes future trajectories by:
+1. Predicting future states over a time horizon
+2. Solving an optimization problem
+3. Executing the first control action
+4. Repeating at each time step
+
+### Learning-Based Approaches
+
+Recent advances use reinforcement learning to:
+- Learn robust walking policies
+- Adapt to new terrains automatically
+- Handle complex dynamics without explicit modeling
+
+## Practice Exercises
+
+1. Calculate the ZMP for a simple inverted pendulum model
+2. Design a gait pattern for a specific stride length and frequency
+3. Simulate a push disturbance and implement a recovery strategy
+4. Compare static vs. dynamic walking for different speeds
+
+## Further Reading
+
+- *Introduction to Humanoid Robotics* by Kajita et al.
+- *Bipedal Robots* by Westervelt et al.
+- Research papers on ZMP, capture point, and MPC for bipedal robots
+
+## Related Chapters
+
+- [Chapter 20: Manipulation](./ch20-manipulation.mdx) - Hand and arm control
+- [Chapter 21: Whole-Body Control](./ch21-whole-body-control.mdx) - Coordinating all DOFs
+- [Chapter 3: Math Fundamentals](../part-01-foundations/ch03-math-fundamentals.mdx) - Mathematical background
+
+## Next Steps
+
+With locomotion skills mastered, proceed to [Chapter 20: Manipulation](./ch20-manipulation.mdx) to learn how humanoid robots interact with objects in their environment.

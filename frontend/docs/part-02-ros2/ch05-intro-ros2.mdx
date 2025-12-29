@@ -1,0 +1,300 @@
+---
+id: ch05-intro-ros2
+title: Chapter 5 - Introduction to ROS 2
+description: Get started with ROS 2, understand its architecture, and set up your development environment.
+sidebar_label: Ch 5. Intro to ROS 2
+sidebar_position: 1
+keywords: [ROS 2, robot operating system, middleware, DDS]
+difficulty: beginner
+estimatedReadingTime: 20
+---
+
+# Chapter 5: Introduction to ROS 2
+
+## Learning Objectives
+
+By the end of this chapter, you will be able to:
+- Understand what ROS 2 is and why it exists
+- Set up a ROS 2 development environment
+- Navigate the ROS 2 workspace structure
+- Run basic ROS 2 commands and examples
+
+## What is ROS 2?
+
+ROS 2 (Robot Operating System 2) is an open-source framework for robot software development. It provides tools, libraries, and conventions that simplify the task of creating complex and robust robot behavior across a wide variety of robotic platforms.
+
+### Key Improvements from ROS 1
+
+- **Real-time capable**: Built on DDS (Data Distribution Service) middleware
+- **Multi-robot support**: Better communication across multiple robots
+- **Security**: Built-in security features for authentication and encryption
+- **Cross-platform**: Windows, macOS, and Linux support
+- **Production-ready**: Industrial-grade reliability
+
+## Setting Up Your Development Environment
+
+### Prerequisites
+
+- Ubuntu 22.04 (recommended) or other supported OS
+- Python 3.8+
+- Basic Linux command-line knowledge
+
+### Installation Steps
+
+import CodeSnippet from '@site/src/components/CodeSnippet';
+
+<CodeSnippet
+  language="bash"
+  title="install-ros2.sh"
+  showLineNumbers={true}
+  annotations={[
+    { line: 2, text: "Set locale to support UTF-8 characters" },
+    { line: 5, text: "Add the ROS 2 GPG key for package authentication" },
+    { line: 8, text: "Add the ROS 2 repository to apt sources" },
+    { line: 11, text: "Update package list with new repository" },
+    { line: 14, text: "Install ROS 2 Humble (LTS release)" }
+  ]}
+  highlightLines={[2, 5, 8, 14]}
+>
+{`# Install ROS 2 Humble on Ubuntu 22.04
+locale-gen en_US en_US.UTF-8
+
+# Add ROS 2 apt repository
+sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
+
+# Add repository to sources list
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
+
+# Update package index
+sudo apt update
+
+# Install ROS 2 Humble Desktop (includes RViz, demos, tutorials)
+sudo apt install ros-humble-desktop python3-colcon-common-extensions -y
+
+# Source the setup script
+source /opt/ros/humble/setup.bash`}
+</CodeSnippet>
+
+## ROS 2 Workspace Structure
+
+A typical ROS 2 workspace follows this structure:
+
+```
+workspace/
+├── src/               # Source code packages
+│   ├── package_1/
+│   │   ├── package.xml
+│   │   ├── CMakeLists.txt
+│   │   └── src/
+│   └── package_2/
+├── build/             # Build artifacts (generated)
+├── install/           # Installed packages (generated)
+└── log/               # Build logs (generated)
+```
+
+### Creating Your First Workspace
+
+<CodeSnippet
+  language="bash"
+  title="create-workspace.sh"
+  showLineNumbers={true}
+  annotations={[
+    { line: 2, text: "Create workspace directory with src subdirectory" },
+    { line: 5, text: "Navigate to workspace root" },
+    { line: 8, text: "Build all packages in the workspace using colcon" },
+    { line: 11, text: "Source the workspace to use your packages" }
+  ]}
+>
+{`# Create a new workspace
+mkdir -p ~/ros2_ws/src
+
+# Navigate to workspace
+cd ~/ros2_ws
+
+# Build the workspace (even if empty)
+colcon build
+
+# Source the workspace overlay
+source install/setup.bash`}
+</CodeSnippet>
+
+## Core ROS 2 Concepts
+
+### Nodes
+
+Nodes are the fundamental building blocks of ROS 2 applications. Each node is an independent process that performs a specific task.
+
+### Topics
+
+Topics enable publish-subscribe communication between nodes. One node publishes messages to a topic, and other nodes can subscribe to receive those messages.
+
+### Services
+
+Services provide synchronous request-response communication. A client node sends a request and waits for a response from a service server.
+
+### Actions
+
+Actions are for long-running tasks that provide feedback during execution. They combine aspects of topics and services.
+
+## Running Your First ROS 2 Example
+
+### Talker-Listener Demo
+
+Let's run the classic talker-listener example to see ROS 2 in action.
+
+**Terminal 1 - Start the Talker:**
+
+<CodeSnippet
+  language="bash"
+  title="Terminal 1"
+  showLineNumbers={false}
+>
+{`# Source ROS 2
+source /opt/ros/humble/setup.bash
+
+# Run the talker node
+ros2 run demo_nodes_cpp talker`}
+</CodeSnippet>
+
+**Terminal 2 - Start the Listener:**
+
+<CodeSnippet
+  language="bash"
+  title="Terminal 2"
+  showLineNumbers={false}
+>
+{`# Source ROS 2
+source /opt/ros/humble/setup.bash
+
+# Run the listener node
+ros2 run demo_nodes_py listener`}
+</CodeSnippet>
+
+You should see the talker publishing "Hello World" messages and the listener receiving them!
+
+## Essential ROS 2 Commands
+
+### Introspection Tools
+
+<CodeSnippet
+  language="bash"
+  title="ros2-commands.sh"
+  showLineNumbers={true}
+  annotations={[
+    { line: 2, text: "List all active nodes in the ROS 2 system" },
+    { line: 5, text: "List all topics currently being published" },
+    { line: 8, text: "Display messages being published on a specific topic" },
+    { line: 11, text: "Show information about a topic (type, publishers, subscribers)" },
+    { line: 14, text: "List all available services" },
+    { line: 17, text: "Display system information and node connections" }
+  ]}
+>
+{`# List all running nodes
+ros2 node list
+
+# List all topics
+ros2 topic list
+
+# Echo messages from a topic
+ros2 topic echo /topic_name
+
+# Get info about a topic
+ros2 topic info /topic_name
+
+# List all services
+ros2 service list
+
+# View the computational graph
+ros2 run rqt_graph rqt_graph`}
+</CodeSnippet>
+
+## Creating Your First ROS 2 Node
+
+Here's a simple Python node that publishes messages:
+
+<CodeSnippet
+  language="python"
+  title="simple_publisher.py"
+  showLineNumbers={true}
+  annotations={[
+    { line: 1, text: "Import the ROS 2 Python client library" },
+    { line: 2, text: "Import the String message type" },
+    { line: 7, text: "Initialize the node with name 'simple_publisher'" },
+    { line: 10, text: "Create a publisher on the 'chatter' topic" },
+    { line: 13, text: "Create a timer that calls publish_message every 0.5 seconds" },
+    { line: 19, text: "Create and publish a message with incrementing counter" }
+  ]}
+  highlightLines={[7, 10, 13, 19]}
+>
+{`import rclpy
+from rclpy.node import Node
+from std_msgs.msg import String
+
+class SimplePublisher(Node):
+    def __init__(self):
+        super().__init__('simple_publisher')
+
+        # Create publisher
+        self.publisher = self.create_publisher(String, 'chatter', 10)
+
+        # Create timer
+        self.timer = self.create_timer(0.5, self.publish_message)
+        self.counter = 0
+
+    def publish_message(self):
+        msg = String()
+        msg.data = f'Hello ROS 2: {self.counter}'
+        self.publisher.publish(msg)
+        self.get_logger().info(f'Publishing: "{msg.data}"')
+        self.counter += 1
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = SimplePublisher()
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()`}
+</CodeSnippet>
+
+## Best Practices
+
+1. **Namespace your nodes**: Use meaningful names and namespaces to avoid conflicts
+2. **Use Quality of Service (QoS)**: Configure QoS settings appropriate for your use case
+3. **Handle errors gracefully**: Always include error handling in your nodes
+4. **Keep nodes focused**: Each node should have a single, well-defined responsibility
+5. **Document your code**: Use comments and README files to explain functionality
+
+## Common Pitfalls
+
+- Forgetting to source the setup script (`source /opt/ros/humble/setup.bash`)
+- Not sourcing the workspace overlay after building
+- Mismatched message types between publishers and subscribers
+- Incorrect QoS settings causing message delivery issues
+
+## Practice Exercises
+
+1. Create a simple publisher and subscriber node
+2. Use `ros2 topic list` and `ros2 topic echo` to inspect running nodes
+3. Modify the talker-listener demo to use custom messages
+4. Create a service server and client
+5. Visualize the node graph using `rqt_graph`
+
+## Further Resources
+
+- [ROS 2 Official Documentation](https://docs.ros.org/en/humble/)
+- [ROS 2 Tutorials](https://docs.ros.org/en/humble/Tutorials.html)
+- [ROS 2 Design Documents](https://design.ros2.org/)
+
+## Related Chapters
+
+- [Chapter 6: ROS 2 Core Concepts](./ch06-ros2-concepts.mdx) - Deep dive into nodes, topics, services
+- [Chapter 7: Communication Patterns](./ch07-communication-patterns.mdx) - Advanced messaging patterns
+
+For ROS 2 command reference, see [Appendix A: ROS 2 Commands](../appendices/appendix-a-ros2-commands.mdx)
+
+## Next Steps
+
+Now that you understand the basics of ROS 2, continue to [Chapter 6: ROS 2 Core Concepts](./ch06-ros2-concepts.mdx) to learn about the architecture in detail.

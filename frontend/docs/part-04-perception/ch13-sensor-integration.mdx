@@ -1,0 +1,980 @@
+---
+id: ch13-sensor-integration
+title: Chapter 13 - Sensor Integration and Fusion
+description: Integrate and fuse data from cameras, LiDAR, IMU, and proprioceptive sensors for robust perception.
+sidebar_label: Ch 13. Sensor Integration
+sidebar_position: 2
+keywords: [sensor fusion, IMU, LiDAR, camera, Kalman filter, sensor calibration]
+difficulty: advanced
+estimatedReadingTime: 40
+---
+
+# Chapter 13: Sensor Integration and Fusion
+
+## Learning Objectives
+
+By the end of this chapter, you will be able to:
+- Integrate multiple sensors (cameras, LiDAR, IMU, force/torque) in ROS 2
+- Perform temporal and spatial sensor calibration
+- Implement sensor fusion using Kalman filters and complementary filters
+- Build robust perception systems that handle sensor failures
+- Synchronize multi-sensor data streams
+
+## Introduction
+
+Modern humanoid robots are equipped with a diverse sensor suite: cameras for vision, LiDAR for precise distance measurement, IMUs for orientation and acceleration, force/torque sensors in joints and feet, and encoders for joint positions. No single sensor provides complete information—each has strengths, weaknesses, and failure modes.
+
+**Sensor fusion** combines data from multiple sensors to create a more accurate, reliable, and comprehensive understanding of the robot's state and environment than any individual sensor could provide. This chapter teaches you how to integrate, calibrate, and fuse sensor data for robust humanoid perception.
+
+### Why Sensor Fusion?
+
+**Benefits:**
+- **Robustness**: Continue operating when individual sensors fail
+- **Accuracy**: Compensate for sensor biases and noise
+- **Completeness**: Fill gaps in individual sensor capabilities
+- **Redundancy**: Cross-validate measurements from multiple sources
+- **Performance**: Use fast but noisy sensors with slow but accurate ones
+
+**Example: Humanoid Localization**
+- IMU: High-frequency orientation (200 Hz), but drifts over time
+- Visual odometry: Accurate position (30 Hz), but computationally expensive
+- LiDAR: Precise distances (10 Hz), but limited field of view
+- **Fusion**: Combine all three for accurate, drift-free, real-time pose estimation
+
+## Sensor Suite Overview
+
+### Typical Humanoid Sensor Configuration
+
+```yaml
+sensors:
+  vision:
+    - head_camera:
+        type: RGB-D
+        resolution: 1920x1080
+        fps: 30
+        fov: 90 degrees
+    - chest_camera:
+        type: RGB
+        resolution: 1280x720
+        fps: 60
+
+  range:
+    - head_lidar:
+        type: 2D scanning
+        range: 30m
+        angular_resolution: 0.25 degrees
+        scan_rate: 10 Hz
+
+  inertial:
+    - torso_imu:
+        type: 9-DOF (accel + gyro + mag)
+        rate: 200 Hz
+        noise: 0.01 m/s² (accel), 0.001 rad/s (gyro)
+
+  proprioceptive:
+    - joint_encoders:
+        count: 28 joints
+        resolution: 0.001 rad
+        rate: 1000 Hz
+    - foot_force_sensors:
+        count: 2 (left, right)
+        axes: 6-DOF (3 force + 3 torque)
+        rate: 1000 Hz
+
+  audio:
+    - microphone_array:
+        channels: 4
+        sample_rate: 48 kHz
+```
+
+### Sensor Characteristics
+
+| Sensor | Update Rate | Range | Accuracy | Failure Modes |
+|--------|-------------|-------|----------|---------------|
+| **RGB Camera** | 30-60 Hz | 0.5-10m | Medium | Poor lighting, motion blur |
+| **Depth Camera** | 30 Hz | 0.5-5m | Medium | Reflective surfaces, sunlight |
+| **LiDAR** | 10-20 Hz | 0.1-100m | High | Transparent objects, dust |
+| **IMU** | 100-1000 Hz | N/A | High (short-term) | Drift (long-term), magnetic interference |
+| **Joint Encoders** | 1000 Hz | N/A | Very high | Mechanical backlash, calibration |
+| **Force Sensors** | 1000 Hz | Contact only | High | Noise, temperature drift |
+
+## ROS 2 Sensor Integration
+
+### Sensor Driver Setup
+
+**1. Camera Driver (Intel RealSense):**
+
+```bash
+# Install RealSense ROS 2 wrapper
+sudo apt install ros-humble-realsense2-camera
+
+# Launch camera
+ros2 launch realsense2_camera rs_launch.py \
+    enable_depth:=true \
+    enable_color:=true \
+    enable_infra:=false \
+    depth_module.profile:=640x480x30 \
+    rgb_camera.profile:=1920x1080x30
+```
+
+**2. LiDAR Driver (Velodyne/Ouster):**
+
+```bash
+# Install LiDAR driver
+sudo apt install ros-humble-velodyne
+
+# Launch LiDAR
+ros2 launch velodyne velodyne-all-nodes-VLP16-launch.py
+```
+
+**3. IMU Driver (Xsens/MicroStrain):**
+
+```bash
+# Install IMU driver
+sudo apt install ros-humble-xsens-driver
+
+# Launch IMU
+ros2 launch xsens_driver xsens_driver.launch.py
+```
+
+### Custom Sensor Publisher
+
+**Force/Torque Sensor Example:**
+
+```python
+import rclpy
+from rclpy.node import Node
+from geometry_msgs.msg import WrenchStamped
+import serial
+import struct
+
+class ForceSensorPublisher(Node):
+    def __init__(self):
+        super().__init__('force_sensor_publisher')
+
+        # Publishers for left and right feet
+        self.left_foot_pub = self.create_publisher(
+            WrenchStamped, '/sensors/left_foot/wrench', 10
+        )
+        self.right_foot_pub = self.create_publisher(
+            WrenchStamped, '/sensors/right_foot/wrench', 10
+        )
+
+        # Serial connection to sensor hardware
+        self.serial_port = serial.Serial(
+            port='/dev/ttyUSB0',
+            baudrate=115200,
+            timeout=0.01
+        )
+
+        # Timer for reading at 1000 Hz
+        self.timer = self.create_timer(0.001, self.read_and_publish)
+
+        # Calibration offsets
+        self.left_offset = [0.0] * 6  # [Fx, Fy, Fz, Tx, Ty, Tz]
+        self.right_offset = [0.0] * 6
+
+        self.get_logger().info('Force sensor publisher started')
+
+    def read_and_publish(self):
+        try:
+            # Read sensor data (format depends on hardware)
+            if self.serial_port.in_waiting >= 28:  # 7 floats * 4 bytes
+                data = self.serial_port.read(28)
+
+                # Parse data: [sensor_id, Fx, Fy, Fz, Tx, Ty, Tz]
+                values = struct.unpack('7f', data)
+                sensor_id = int(values[0])
+                forces = values[1:4]
+                torques = values[4:7]
+
+                # Create message
+                msg = WrenchStamped()
+                msg.header.stamp = self.get_clock().now().to_msg()
+
+                if sensor_id == 0:  # Left foot
+                    msg.header.frame_id = 'left_foot_link'
+                    msg.wrench.force.x = forces[0] - self.left_offset[0]
+                    msg.wrench.force.y = forces[1] - self.left_offset[1]
+                    msg.wrench.force.z = forces[2] - self.left_offset[2]
+                    msg.wrench.torque.x = torques[0] - self.left_offset[3]
+                    msg.wrench.torque.y = torques[1] - self.left_offset[4]
+                    msg.wrench.torque.z = torques[2] - self.left_offset[5]
+                    self.left_foot_pub.publish(msg)
+
+                elif sensor_id == 1:  # Right foot
+                    msg.header.frame_id = 'right_foot_link'
+                    msg.wrench.force.x = forces[0] - self.right_offset[0]
+                    msg.wrench.force.y = forces[1] - self.right_offset[1]
+                    msg.wrench.force.z = forces[2] - self.right_offset[2]
+                    msg.wrench.torque.x = torques[0] - self.right_offset[3]
+                    msg.wrench.torque.y = torques[1] - self.right_offset[4]
+                    msg.wrench.torque.z = torques[2] - self.right_offset[5]
+                    self.right_foot_pub.publish(msg)
+
+        except Exception as e:
+            self.get_logger().error(f'Error reading force sensor: {str(e)}')
+
+    def calibrate_offsets(self, duration_sec=5.0):
+        """Calibrate sensor offsets (call when robot is stationary)"""
+        self.get_logger().info(f'Calibrating for {duration_sec} seconds...')
+
+        left_samples = []
+        right_samples = []
+
+        start_time = self.get_clock().now()
+        while (self.get_clock().now() - start_time).nanoseconds / 1e9 < duration_sec:
+            # Collect samples
+            # (implementation depends on your data collection method)
+            pass
+
+        # Compute averages as offsets
+        self.left_offset = [sum(x) / len(x) for x in zip(*left_samples)]
+        self.right_offset = [sum(x) / len(x) for x in zip(*right_samples)]
+
+        self.get_logger().info('Calibration complete')
+```
+
+## Sensor Calibration
+
+### Camera Calibration
+
+**Intrinsic Calibration (Camera Parameters):**
+
+```python
+import cv2
+import numpy as np
+import glob
+
+def calibrate_camera(image_paths, chessboard_size, square_size_mm):
+    """
+    Calibrate camera intrinsics using chessboard pattern
+
+    Args:
+        image_paths: List of calibration image paths
+        chessboard_size: Tuple (rows, cols) of internal corners
+        square_size_mm: Physical size of chessboard square in mm
+
+    Returns:
+        camera_matrix: 3x3 intrinsic matrix
+        dist_coeffs: Distortion coefficients
+        rvecs, tvecs: Rotation and translation vectors for each image
+    """
+
+    # Prepare object points (0,0,0), (1,0,0), (2,0,0) ...
+    objp = np.zeros((chessboard_size[0] * chessboard_size[1], 3), np.float32)
+    objp[:, :2] = np.mgrid[0:chessboard_size[0], 0:chessboard_size[1]].T.reshape(-1, 2)
+    objp *= square_size_mm
+
+    objpoints = []  # 3D points in real world space
+    imgpoints = []  # 2D points in image plane
+
+    for fname in image_paths:
+        img = cv2.imread(fname)
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+        # Find chessboard corners
+        ret, corners = cv2.findChessboardCorners(gray, chessboard_size, None)
+
+        if ret:
+            objpoints.append(objp)
+
+            # Refine corner positions
+            criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+            corners2 = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
+            imgpoints.append(corners2)
+
+            # Draw and display corners (optional)
+            cv2.drawChessboardCorners(img, chessboard_size, corners2, ret)
+            cv2.imshow('Calibration', img)
+            cv2.waitKey(500)
+
+    cv2.destroyAllWindows()
+
+    # Calibrate camera
+    ret, camera_matrix, dist_coeffs, rvecs, tvecs = cv2.calibrateCamera(
+        objpoints, imgpoints, gray.shape[::-1], None, None
+    )
+
+    # Compute reprojection error
+    mean_error = 0
+    for i in range(len(objpoints)):
+        imgpoints2, _ = cv2.projectPoints(objpoints[i], rvecs[i], tvecs[i],
+                                           camera_matrix, dist_coeffs)
+        error = cv2.norm(imgpoints[i], imgpoints2, cv2.NORM_L2) / len(imgpoints2)
+        mean_error += error
+
+    mean_error /= len(objpoints)
+    print(f"Mean reprojection error: {mean_error:.3f} pixels")
+
+    return camera_matrix, dist_coeffs, rvecs, tvecs
+
+# Save calibration
+def save_calibration(filename, camera_matrix, dist_coeffs):
+    np.savez(filename,
+             camera_matrix=camera_matrix,
+             dist_coeffs=dist_coeffs)
+
+# Load calibration
+def load_calibration(filename):
+    data = np.load(filename)
+    return data['camera_matrix'], data['dist_coeffs']
+
+# Usage
+images = glob.glob('calibration_images/*.jpg')
+K, dist, rvecs, tvecs = calibrate_camera(images, (9, 6), 25.0)  # 9x6 board, 25mm squares
+save_calibration('camera_calibration.npz', K, dist)
+```
+
+### Extrinsic Calibration (Sensor-to-Robot Transform)
+
+**Hand-Eye Calibration:**
+
+```python
+import numpy as np
+from scipy.spatial.transform import Rotation
+
+def hand_eye_calibration(robot_poses, camera_poses):
+    """
+    Solve for camera-to-robot transform using hand-eye calibration
+
+    AX = XB problem, where:
+    A: robot base to end-effector transform
+    B: camera to marker transform
+    X: end-effector to camera transform (what we want)
+
+    Args:
+        robot_poses: List of 4x4 homogeneous transforms (base to end-effector)
+        camera_poses: List of 4x4 homogeneous transforms (camera to marker)
+
+    Returns:
+        X: 4x4 transform from end-effector to camera
+    """
+
+    from cv2 import calibrateHandEye, CALIB_HAND_EYE_TSAI
+
+    # Extract rotations and translations
+    R_gripper2base = []
+    t_gripper2base = []
+    R_target2cam = []
+    t_target2cam = []
+
+    for robot_pose, camera_pose in zip(robot_poses, camera_poses):
+        R_gripper2base.append(robot_pose[:3, :3])
+        t_gripper2base.append(robot_pose[:3, 3])
+        R_target2cam.append(camera_pose[:3, :3])
+        t_target2cam.append(camera_pose[:3, 3])
+
+    # Solve hand-eye calibration
+    R_cam2gripper, t_cam2gripper = calibrateHandEye(
+        R_gripper2base, t_gripper2base,
+        R_target2cam, t_target2cam,
+        method=CALIB_HAND_EYE_TSAI
+    )
+
+    # Construct 4x4 transform
+    X = np.eye(4)
+    X[:3, :3] = R_cam2gripper
+    X[:3, 3] = t_cam2gripper.squeeze()
+
+    return X
+```
+
+### IMU Calibration
+
+```python
+class IMUCalibrator:
+    """Calibrate IMU biases and scale factors"""
+
+    def __init__(self):
+        self.accel_bias = np.zeros(3)
+        self.gyro_bias = np.zeros(3)
+        self.accel_scale = np.ones(3)
+        self.gyro_scale = np.ones(3)
+
+    def calibrate_stationary(self, imu_samples, duration=10.0):
+        """
+        Calibrate gyro and accelerometer biases while stationary
+
+        Args:
+            imu_samples: List of IMU readings (accel, gyro)
+            duration: Calibration duration in seconds
+        """
+
+        accels = np.array([s['accel'] for s in imu_samples])
+        gyros = np.array([s['gyro'] for s in imu_samples])
+
+        # Gyro bias: mean of all samples (should be zero when stationary)
+        self.gyro_bias = np.mean(gyros, axis=0)
+
+        # Accel bias: mean minus gravity vector
+        accel_mean = np.mean(accels, axis=0)
+
+        # Determine which axis is aligned with gravity (largest magnitude)
+        gravity_axis = np.argmax(np.abs(accel_mean))
+        gravity_direction = np.sign(accel_mean[gravity_axis])
+
+        # Subtract gravity from that axis
+        gravity_vector = np.zeros(3)
+        gravity_vector[gravity_axis] = gravity_direction * 9.81
+
+        self.accel_bias = accel_mean - gravity_vector
+
+        print(f"Gyro bias: {self.gyro_bias}")
+        print(f"Accel bias: {self.accel_bias}")
+
+    def calibrate_six_point(self, samples_per_orientation):
+        """
+        Six-point tumble calibration for accelerometer
+        Place IMU in 6 orientations (+X, -X, +Y, -Y, +Z, -Z up)
+        """
+
+        # Collect samples for each orientation
+        measurements = []  # Should have 6 sets of samples
+
+        # Build calibration matrix (least squares)
+        # accel_true = Scale * (accel_raw - Bias)
+        # Solve for Scale and Bias
+
+        # This is a simplified version; production systems use more sophisticated methods
+        pass
+
+    def apply_calibration(self, raw_accel, raw_gyro):
+        """Apply calibration to raw IMU data"""
+
+        calibrated_accel = (raw_accel - self.accel_bias) * self.accel_scale
+        calibrated_gyro = (raw_gyro - self.gyro_bias) * self.gyro_scale
+
+        return calibrated_accel, calibrated_gyro
+```
+
+## Sensor Synchronization
+
+### Time Synchronization
+
+```python
+from message_filters import ApproximateTimeSynchronizer, Subscriber
+from sensor_msgs.msg import Image, Imu, PointCloud2
+from geometry_msgs.msg import PoseStamped
+
+class MultiSensorFusionNode(Node):
+    def __init__(self):
+        super().__init__('multi_sensor_fusion')
+
+        # Create subscribers
+        self.rgb_sub = Subscriber(self, Image, '/camera/color/image_raw')
+        self.depth_sub = Subscriber(self, Image, '/camera/depth/image_raw')
+        self.imu_sub = Subscriber(self, Imu, '/imu/data')
+        self.lidar_sub = Subscriber(self, PointCloud2, '/lidar/points')
+
+        # Synchronize messages with approximate time stamps
+        # tolerance: max time difference in seconds
+        self.sync = ApproximateTimeSynchronizer(
+            [self.rgb_sub, self.depth_sub, self.imu_sub, self.lidar_sub],
+            queue_size=10,
+            slop=0.1  # 100ms tolerance
+        )
+        self.sync.registerCallback(self.synchronized_callback)
+
+        self.get_logger().info('Multi-sensor fusion node started')
+
+    def synchronized_callback(self, rgb_msg, depth_msg, imu_msg, lidar_msg):
+        """Process synchronized sensor data"""
+
+        # All messages are synchronized within 'slop' tolerance
+        timestamp = rgb_msg.header.stamp
+
+        self.get_logger().info(
+            f'Received synchronized data at {timestamp.sec}.{timestamp.nanosec}'
+        )
+
+        # Fuse sensor data
+        fused_data = self.fuse_sensors(rgb_msg, depth_msg, imu_msg, lidar_msg)
+
+    def fuse_sensors(self, rgb, depth, imu, lidar):
+        """Implement sensor fusion logic"""
+        pass
+```
+
+### Hardware Time Synchronization
+
+For precise synchronization, use hardware triggers:
+
+```python
+class HardwareSyncController(Node):
+    """Trigger all sensors simultaneously using hardware sync signal"""
+
+    def __init__(self):
+        super().__init__('hardware_sync_controller')
+
+        # GPIO for trigger signal
+        import RPi.GPIO as GPIO
+        GPIO.setmode(GPIO.BCM)
+        self.trigger_pin = 18
+        GPIO.setup(self.trigger_pin, GPIO.OUT)
+
+        # Trigger at 30 Hz
+        self.timer = self.create_timer(1.0 / 30.0, self.trigger_sensors)
+
+    def trigger_sensors(self):
+        """Send hardware trigger pulse to all sensors"""
+
+        # Send trigger pulse (10 microseconds)
+        GPIO.output(self.trigger_pin, GPIO.HIGH)
+        time.sleep(0.00001)  # 10 µs
+        GPIO.output(self.trigger_pin, GPIO.LOW)
+```
+
+## Sensor Fusion Algorithms
+
+### Complementary Filter (Simple IMU Fusion)
+
+```python
+import numpy as np
+from scipy.spatial.transform import Rotation
+
+class ComplementaryFilter:
+    """
+    Fuse accelerometer and gyroscope for orientation estimation
+
+    - Gyro: High frequency, no drift short-term, drifts long-term
+    - Accel: Low frequency, noisy, provides gravity reference
+    """
+
+    def __init__(self, alpha=0.98, dt=0.01):
+        """
+        Args:
+            alpha: Complementary filter coefficient (0-1)
+                   Higher = trust gyro more
+            dt: Time step in seconds
+        """
+        self.alpha = alpha
+        self.dt = dt
+        self.orientation = Rotation.from_quat([0, 0, 0, 1])  # Identity
+
+    def update(self, accel, gyro):
+        """
+        Update orientation estimate
+
+        Args:
+            accel: Accelerometer reading (m/s²) [ax, ay, az]
+            gyro: Gyroscope reading (rad/s) [wx, wy, wz]
+
+        Returns:
+            Orientation as scipy Rotation object
+        """
+
+        # Integrate gyroscope (high-frequency estimate)
+        gyro_delta = Rotation.from_rotvec(gyro * self.dt)
+        gyro_orientation = self.orientation * gyro_delta
+
+        # Estimate orientation from accelerometer (low-frequency)
+        # Assumes only gravity affects accelerometer
+        accel_norm = accel / np.linalg.norm(accel)
+
+        # Calculate tilt from gravity vector
+        # (simplified - assumes robot is mostly upright)
+        roll = np.arctan2(accel_norm[1], accel_norm[2])
+        pitch = np.arctan2(-accel_norm[0],
+                           np.sqrt(accel_norm[1]**2 + accel_norm[2]**2))
+        yaw = self.orientation.as_euler('xyz')[2]  # Keep previous yaw
+
+        accel_orientation = Rotation.from_euler('xyz', [roll, pitch, yaw])
+
+        # Complementary filter: weighted average
+        # Convert to quaternions for interpolation
+        q_gyro = gyro_orientation.as_quat()
+        q_accel = accel_orientation.as_quat()
+
+        # Spherical linear interpolation (SLERP)
+        q_fused = self.slerp(q_accel, q_gyro, self.alpha)
+
+        self.orientation = Rotation.from_quat(q_fused)
+
+        return self.orientation
+
+    def slerp(self, q1, q2, t):
+        """Spherical linear interpolation between quaternions"""
+
+        dot = np.dot(q1, q2)
+
+        # If quaternions are close, use linear interpolation
+        if dot > 0.9995:
+            result = q1 + t * (q2 - q1)
+            return result / np.linalg.norm(result)
+
+        # Clamp dot product
+        dot = np.clip(dot, -1.0, 1.0)
+        theta = np.arccos(dot) * t
+
+        q3 = q2 - q1 * dot
+        q3 = q3 / np.linalg.norm(q3)
+
+        return q1 * np.cos(theta) + q3 * np.sin(theta)
+```
+
+### Extended Kalman Filter (EKF)
+
+```python
+import numpy as np
+
+class ExtendedKalmanFilter:
+    """
+    EKF for sensor fusion
+
+    State: [x, y, z, vx, vy, vz, qw, qx, qy, qz]
+           Position, velocity, and orientation (quaternion)
+    """
+
+    def __init__(self, dt=0.01):
+        self.dt = dt
+
+        # State vector (10D)
+        self.x = np.zeros(10)
+        self.x[6] = 1.0  # Initialize quaternion to identity
+
+        # State covariance matrix
+        self.P = np.eye(10) * 0.1
+
+        # Process noise covariance
+        self.Q = np.eye(10) * 0.01
+
+        # Measurement noise covariances
+        self.R_accel = np.eye(3) * 0.1    # Accelerometer
+        self.R_gyro = np.eye(3) * 0.01    # Gyroscope
+        self.R_vision = np.eye(3) * 0.05  # Visual odometry
+
+    def predict(self, accel, gyro):
+        """
+        Prediction step using IMU data
+
+        Args:
+            accel: Linear acceleration (m/s²)
+            gyro: Angular velocity (rad/s)
+        """
+
+        # Extract state
+        pos = self.x[0:3]
+        vel = self.x[3:6]
+        q = self.x[6:10]
+
+        # Predict position (constant velocity model)
+        pos_new = pos + vel * self.dt + 0.5 * accel * self.dt**2
+        vel_new = vel + accel * self.dt
+
+        # Predict orientation (integrate gyroscope)
+        omega = np.array([
+            [0, -gyro[2], gyro[1], gyro[0]],
+            [gyro[2], 0, -gyro[0], gyro[1]],
+            [-gyro[1], gyro[0], 0, gyro[2]],
+            [-gyro[0], -gyro[1], -gyro[2], 0]
+        ])
+
+        q_dot = 0.5 * omega @ q
+        q_new = q + q_dot * self.dt
+        q_new = q_new / np.linalg.norm(q_new)  # Normalize quaternion
+
+        # Update state
+        self.x[0:3] = pos_new
+        self.x[3:6] = vel_new
+        self.x[6:10] = q_new
+
+        # Jacobian of state transition (simplified)
+        F = np.eye(10)
+        F[0:3, 3:6] = np.eye(3) * self.dt
+
+        # Update covariance
+        self.P = F @ self.P @ F.T + self.Q
+
+    def update_vision(self, measured_position):
+        """
+        Update step using visual odometry
+
+        Args:
+            measured_position: Measured position from visual odometry
+        """
+
+        # Measurement model: h(x) = position
+        H = np.zeros((3, 10))
+        H[0:3, 0:3] = np.eye(3)
+
+        # Innovation
+        y = measured_position - self.x[0:3]
+
+        # Innovation covariance
+        S = H @ self.P @ H.T + self.R_vision
+
+        # Kalman gain
+        K = self.P @ H.T @ np.linalg.inv(S)
+
+        # Update state
+        self.x = self.x + K @ y
+
+        # Update covariance
+        self.P = (np.eye(10) - K @ H) @ self.P
+
+        # Normalize quaternion
+        self.x[6:10] = self.x[6:10] / np.linalg.norm(self.x[6:10])
+
+    def get_pose(self):
+        """Return current pose estimate"""
+        return {
+            'position': self.x[0:3],
+            'velocity': self.x[3:6],
+            'orientation': self.x[6:10]  # Quaternion [w, x, y, z]
+        }
+```
+
+### Robot Localization (ROS 2)
+
+For production systems, use `robot_localization` package:
+
+```bash
+sudo apt install ros-humble-robot-localization
+```
+
+**Configuration:**
+
+```yaml
+# ekf_config.yaml
+ekf_filter_node:
+  ros__parameters:
+    frequency: 50.0
+    sensor_timeout: 0.1
+    two_d_mode: false
+    publish_tf: true
+
+    map_frame: map
+    odom_frame: odom
+    base_link_frame: base_link
+    world_frame: odom
+
+    # IMU Configuration
+    imu0: /imu/data
+    imu0_config: [false, false, false,  # x, y, z position
+                  true,  true,  true,   # roll, pitch, yaw orientation
+                  false, false, false,  # x, y, z velocity
+                  true,  true,  true,   # roll, pitch, yaw velocity
+                  true,  true,  true]   # x, y, z acceleration
+    imu0_differential: false
+    imu0_relative: false
+    imu0_queue_size: 10
+
+    # Visual Odometry
+    odom0: /visual_odometry/odom
+    odom0_config: [true,  true,  true,   # x, y, z position
+                   false, false, true,   # roll, pitch, yaw orientation
+                   true,  true,  true,   # x, y, z velocity
+                   false, false, true,   # roll, pitch, yaw velocity
+                   false, false, false]  # x, y, z acceleration
+    odom0_differential: false
+    odom0_relative: false
+
+    # LiDAR Odometry
+    odom1: /lidar_odometry/odom
+    odom1_config: [true,  true,  true,
+                   false, false, true,
+                   false, false, false,
+                   false, false, false,
+                   false, false, false]
+    odom1_differential: false
+```
+
+**Launch:**
+
+```bash
+ros2 launch robot_localization ekf.launch.py config_file:=ekf_config.yaml
+```
+
+## Handling Sensor Failures
+
+### Sensor Health Monitoring
+
+```python
+class SensorHealthMonitor(Node):
+    def __init__(self):
+        super().__init__('sensor_health_monitor')
+
+        self.sensor_status = {
+            'camera': {'active': False, 'last_update': None, 'timeout': 1.0},
+            'lidar': {'active': False, 'last_update': None, 'timeout': 0.5},
+            'imu': {'active': False, 'last_update': None, 'timeout': 0.1},
+        }
+
+        # Subscribe to all sensors
+        self.create_subscription(Image, '/camera/image_raw',
+                                 lambda msg: self.update_status('camera', msg), 10)
+        self.create_subscription(PointCloud2, '/lidar/points',
+                                 lambda msg: self.update_status('lidar', msg), 10)
+        self.create_subscription(Imu, '/imu/data',
+                                 lambda msg: self.update_status('imu', msg), 10)
+
+        # Health check timer
+        self.create_timer(0.1, self.check_health)
+
+    def update_status(self, sensor_name, msg):
+        """Update sensor last-seen timestamp"""
+        self.sensor_status[sensor_name]['last_update'] = self.get_clock().now()
+        self.sensor_status[sensor_name]['active'] = True
+
+    def check_health(self):
+        """Check if sensors are publishing within timeout"""
+
+        now = self.get_clock().now()
+
+        for sensor, status in self.sensor_status.items():
+            if status['last_update'] is None:
+                continue
+
+            time_since_update = (now - status['last_update']).nanoseconds / 1e9
+
+            if time_since_update > status['timeout']:
+                if status['active']:
+                    self.get_logger().warn(f'{sensor} timeout! ({time_since_update:.2f}s)')
+                    status['active'] = False
+
+        # Trigger fallback modes if critical sensors fail
+        if not self.sensor_status['imu']['active']:
+            self.handle_imu_failure()
+
+    def handle_imu_failure(self):
+        """Fallback when IMU fails"""
+        self.get_logger().error('IMU failure detected - switching to vision-only mode')
+        # Implement fallback logic
+```
+
+### Graceful Degradation
+
+```python
+class AdaptiveSensorFusion(Node):
+    """Automatically adjust fusion based on sensor availability"""
+
+    def __init__(self):
+        super().__init__('adaptive_sensor_fusion')
+
+        self.fusion_modes = {
+            'full': ['camera', 'lidar', 'imu'],      # All sensors
+            'vision_imu': ['camera', 'imu'],         # No LiDAR
+            'lidar_imu': ['lidar', 'imu'],           # No camera
+            'imu_only': ['imu'],                     # Minimal
+        }
+
+        self.current_mode = 'full'
+
+    def select_fusion_mode(self, available_sensors):
+        """Select best fusion mode based on available sensors"""
+
+        if all(s in available_sensors for s in self.fusion_modes['full']):
+            return 'full'
+        elif all(s in available_sensors for s in self.fusion_modes['vision_imu']):
+            return 'vision_imu'
+        elif all(s in available_sensors for s in self.fusion_modes['lidar_imu']):
+            return 'lidar_imu'
+        else:
+            return 'imu_only'
+
+    def fuse_sensors(self, sensor_data, mode):
+        """Apply appropriate fusion algorithm based on mode"""
+
+        if mode == 'full':
+            return self.full_fusion(sensor_data)
+        elif mode == 'vision_imu':
+            return self.vision_imu_fusion(sensor_data)
+        elif mode == 'lidar_imu':
+            return self.lidar_imu_fusion(sensor_data)
+        else:
+            return self.imu_only_fusion(sensor_data)
+```
+
+## Practice Exercises
+
+### Exercise 1: IMU-Visual Odometry Fusion
+
+**Task:** Fuse IMU and visual odometry for robust pose estimation
+
+**Requirements:**
+- Implement complementary filter or EKF
+- Handle initialization and compass calibration
+- Compare fused estimate with ground truth
+- Test under sensor failures (block camera)
+- Achieve `<5cm` position error over 10m trajectory
+
+### Exercise 2: Multi-Sensor Calibration Pipeline
+
+**Task:** Build automated calibration system for humanoid
+
+**Requirements:**
+- Calibrate camera intrinsics and extrinsics
+- Calibrate IMU biases and alignments
+- Calibrate LiDAR-to-camera transform
+- Save calibration files in standard format
+- Validate calibration with reprojection tests
+
+### Exercise 3: Sensor Fusion for Bipedal Walking
+
+**Task:** Fuse IMU, joint encoders, and foot force sensors for balance
+
+**Requirements:**
+- Estimate center of mass (CoM) position
+- Detect foot contact events from force sensors
+- Fuse IMU and kinematics for body orientation
+- Publish fused state at 1kHz
+- Enable stable walking on uneven terrain
+
+## Best Practices
+
+### 1. Sensor Placement
+
+- **IMU**: Mount rigidly on torso, near center of mass
+- **Cameras**: High on head for maximum field of view
+- **LiDAR**: Rotating mount or fixed multi-plane
+- **Force sensors**: Integrated into feet and wrists
+
+### 2. Calibration Workflow
+
+1. Intrinsic calibration (cameras, IMU)
+2. Extrinsic calibration (sensor-to-robot transforms)
+3. Temporal calibration (synchronization offsets)
+4. Online calibration refinement during operation
+
+### 3. Computational Efficiency
+
+- Run sensor fusion at different rates (IMU: 200Hz, Vision: 30Hz)
+- Use asynchronous updates in EKF
+- Offload heavy processing (deep learning) to GPU
+- Prioritize critical sensors (IMU, force) for low latency
+
+## Common Pitfalls
+
+1. **Incorrect time synchronization**: Ensure all sensors share a common time source
+2. **Ignoring sensor noise**: Model realistic noise in your fusion algorithm
+3. **Poor calibration**: Recalibrate regularly, especially after hardware changes
+4. **Not handling outliers**: Implement outlier rejection (RANSAC, Mahalanobis distance)
+5. **Overfitting to one sensor**: Balance trust across sensors based on their characteristics
+
+## Further Reading
+
+**Books:**
+- "Probabilistic Robotics" by Thrun, Burgard, Fox
+- "State Estimation for Robotics" by Barfoot
+
+**Papers:**
+- "A Kalman Filter for IMU-Based Attitude Estimation" (Madgwick, 2010)
+- "Visual-Inertial Sensor Fusion" (Mourikis & Roumeliotis, 2007)
+
+**Software:**
+- [robot_localization](http://docs.ros.org/en/humble/p/robot_localization/)
+- [kalman_filter](https://github.com/rlabbe/Kalman-and-Bayesian-Filters-in-Python)
+
+## Next Steps
+
+Now that you can integrate and fuse multiple sensors:
+
+1. **Chapter 14**: Apply sensor fusion to human detection and tracking
+2. **Chapter 15**: Use fused state estimates for AI decision-making
+3. **Chapter 19**: Integrate with locomotion controllers
+4. **Project 5**: Build complete sensor fusion pipeline for humanoid
+
+:::tip Key Takeaway
+Sensor fusion is essential for robust robotics. No single sensor is perfect—combining multiple sensors with complementary strengths creates a perception system greater than the sum of its parts. Always validate your fusion algorithm under realistic conditions and sensor failures.
+:::

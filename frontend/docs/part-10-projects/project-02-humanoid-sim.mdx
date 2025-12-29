@@ -1,0 +1,1257 @@
+---
+id: project-02-humanoid-sim
+title: Project 2 - Humanoid Robot Simulation
+description: Create a humanoid robot model in simulation with kinematics and basic control.
+sidebar_label: Proj 2. Humanoid Simulation
+sidebar_position: 2
+difficulty: intermediate
+estimatedDuration: 4-6 hours
+prerequisites:
+  - ch03-math-fundamentals
+  - ch04-physics-robotics
+  - ch08-ros2-humanoid-control
+  - ch09-gazebo
+technologies: [ROS 2, Gazebo, URDF, Python, MoveIt]
+learningOutcomes:
+  - Model a humanoid robot in URDF
+  - Configure joint controllers
+  - Implement forward kinematics
+  - Simulate bipedal balance
+keywords: [humanoid robot, URDF, simulation, kinematics, Gazebo]
+---
+
+# Project 2: Humanoid Robot Simulation
+
+## Overview
+
+Build a complete humanoid robot simulation with articulated joints, realistic physics, and basic control capabilities. This project bridges mathematical foundations with practical robot implementation.
+
+## Prerequisites
+
+Before starting this project, you should have completed:
+- [Chapter 3: Mathematical Fundamentals](/docs/part-01-foundations/ch03-math-fundamentals) - Kinematics and transformation matrices
+- [Chapter 4: Physics for Robotics](/docs/part-01-foundations/ch04-physics-robotics) - Dynamics and forces
+- [Chapter 8: ROS 2 for Humanoid Control](/docs/part-02-ros2/ch08-ros2-humanoid-control) - Humanoid control architectures
+- [Chapter 9: Gazebo Simulation](/docs/part-03-simulation/ch09-gazebo) - Simulation environment setup
+
+## Learning Objectives
+
+By completing this project, you will:
+1. Design a humanoid robot URDF model with 20+ joints
+2. Configure joint controllers for torque and position control
+3. Implement forward and inverse kinematics solvers
+4. Simulate realistic physics and collisions
+5. Achieve stable standing pose
+6. Visualize joint states and transforms in RViz2
+
+## Project Steps
+
+### Step 1: URDF Model Design
+
+#### 1.1 Create Humanoid Package
+
+```bash
+cd ~/ros2_ws/src
+ros2 pkg create --build-type ament_cmake humanoid_robot \
+  --dependencies rclcpp std_msgs sensor_msgs geometry_msgs trajectory_msgs control_msgs \
+  --node-name humanoid_controller
+
+cd humanoid_robot
+mkdir -p urdf meshes launch config controllers scripts
+```
+
+#### 1.2 Define Humanoid URDF
+
+Create `urdf/humanoid.urdf.xacro`:
+
+```xml
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="humanoid_robot">
+
+  <!-- Properties -->
+  <xacro:property name="pi" value="3.14159265359"/>
+
+  <!-- Torso dimensions -->
+  <xacro:property name="torso_height" value="0.4"/>
+  <xacro:property name="torso_width" value="0.25"/>
+  <xacro:property name="torso_depth" value="0.15"/>
+  <xacro:property name="torso_mass" value="8.0"/>
+
+  <!-- Limb dimensions -->
+  <xacro:property name="upper_leg_length" value="0.4"/>
+  <xacro:property name="lower_leg_length" value="0.4"/>
+  <xacro:property name="upper_arm_length" value="0.3"/>
+  <xacro:property name="lower_arm_length" value="0.25"/>
+  <xacro:property name="limb_radius" value="0.04"/>
+  <xacro:property name="limb_mass" value="1.5"/>
+
+  <!-- Base Link (Pelvis) -->
+  <link name="base_link">
+    <visual>
+      <geometry>
+        <box size="${torso_depth} ${torso_width} 0.15"/>
+      </geometry>
+      <material name="gray">
+        <color rgba="0.5 0.5 0.5 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="${torso_depth} ${torso_width} 0.15"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="5.0"/>
+      <inertia ixx="0.052" ixy="0.0" ixz="0.0"
+               iyy="0.031" iyz="0.0" izz="0.052"/>
+    </inertial>
+  </link>
+
+  <!-- Torso -->
+  <link name="torso">
+    <visual>
+      <geometry>
+        <box size="${torso_depth} ${torso_width} ${torso_height}"/>
+      </geometry>
+      <material name="blue">
+        <color rgba="0.2 0.4 0.8 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="${torso_depth} ${torso_width} ${torso_height}"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="${torso_mass}"/>
+      <inertia ixx="0.133" ixy="0.0" ixz="0.0"
+               iyy="0.117" iyz="0.0" izz="0.042"/>
+    </inertial>
+  </link>
+
+  <joint name="waist_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="torso"/>
+    <origin xyz="0 0 0.275" rpy="0 0 0"/>
+  </joint>
+
+  <!-- Head -->
+  <link name="head">
+    <visual>
+      <geometry>
+        <sphere radius="0.1"/>
+      </geometry>
+      <material name="skin">
+        <color rgba="0.9 0.7 0.6 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <sphere radius="0.1"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="1.5"/>
+      <inertia ixx="0.006" ixy="0.0" ixz="0.0"
+               iyy="0.006" iyz="0.0" izz="0.006"/>
+    </inertial>
+  </link>
+
+  <joint name="neck_joint" type="revolute">
+    <parent link="torso"/>
+    <child link="head"/>
+    <origin xyz="0 0 0.25" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="${-pi/4}" upper="${pi/4}" effort="20.0" velocity="1.0"/>
+  </joint>
+
+  <!-- Leg Macro -->
+  <xacro:macro name="leg" params="prefix reflect">
+
+    <!-- Hip Yaw -->
+    <link name="${prefix}_hip_yaw">
+      <visual>
+        <geometry>
+          <cylinder radius="0.05" length="0.08"/>
+        </geometry>
+        <material name="dark_gray">
+          <color rgba="0.3 0.3 0.3 1.0"/>
+        </material>
+        <origin xyz="0 0 0" rpy="0 ${pi/2} 0"/>
+      </visual>
+      <collision>
+        <geometry>
+          <cylinder radius="0.05" length="0.08"/>
+        </geometry>
+        <origin xyz="0 0 0" rpy="0 ${pi/2} 0"/>
+      </collision>
+      <inertial>
+        <mass value="0.8"/>
+        <inertia ixx="0.001" ixy="0.0" ixz="0.0"
+                 iyy="0.001" iyz="0.0" izz="0.001"/>
+      </inertial>
+    </link>
+
+    <joint name="${prefix}_hip_yaw_joint" type="revolute">
+      <parent link="base_link"/>
+      <child link="${prefix}_hip_yaw"/>
+      <origin xyz="0 ${reflect * 0.1} -0.075" rpy="0 0 0"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="${-pi/6}" upper="${pi/6}" effort="100.0" velocity="1.0"/>
+    </joint>
+
+    <!-- Hip Roll -->
+    <link name="${prefix}_hip_roll">
+      <visual>
+        <geometry>
+          <cylinder radius="0.045" length="0.08"/>
+        </geometry>
+        <material name="dark_gray"/>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+      </visual>
+      <collision>
+        <geometry>
+          <cylinder radius="0.045" length="0.08"/>
+        </geometry>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+      </collision>
+      <inertial>
+        <mass value="0.8"/>
+        <inertia ixx="0.001" ixy="0.0" ixz="0.0"
+                 iyy="0.001" iyz="0.0" izz="0.001"/>
+      </inertial>
+    </link>
+
+    <joint name="${prefix}_hip_roll_joint" type="revolute">
+      <parent link="${prefix}_hip_yaw"/>
+      <child link="${prefix}_hip_roll"/>
+      <origin xyz="0 ${reflect * 0.04} 0" rpy="0 0 0"/>
+      <axis xyz="1 0 0"/>
+      <limit lower="${-pi/6}" upper="${pi/3}" effort="100.0" velocity="1.0"/>
+    </joint>
+
+    <!-- Upper Leg (Thigh) -->
+    <link name="${prefix}_upper_leg">
+      <visual>
+        <geometry>
+          <cylinder radius="${limb_radius}" length="${upper_leg_length}"/>
+        </geometry>
+        <material name="blue"/>
+        <origin xyz="0 0 ${-upper_leg_length/2}" rpy="0 0 0"/>
+      </visual>
+      <collision>
+        <geometry>
+          <cylinder radius="${limb_radius}" length="${upper_leg_length}"/>
+        </geometry>
+        <origin xyz="0 0 ${-upper_leg_length/2}" rpy="0 0 0"/>
+      </collision>
+      <inertial>
+        <mass value="${limb_mass}"/>
+        <origin xyz="0 0 ${-upper_leg_length/2}"/>
+        <inertia ixx="0.02" ixy="0.0" ixz="0.0"
+                 iyy="0.02" iyz="0.0" izz="0.0003"/>
+      </inertial>
+    </link>
+
+    <joint name="${prefix}_hip_pitch_joint" type="revolute">
+      <parent link="${prefix}_hip_roll"/>
+      <child link="${prefix}_upper_leg"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <limit lower="${-pi/3}" upper="${pi/2}" effort="150.0" velocity="1.0"/>
+    </joint>
+
+    <!-- Lower Leg (Shin) -->
+    <link name="${prefix}_lower_leg">
+      <visual>
+        <geometry>
+          <cylinder radius="${limb_radius * 0.8}" length="${lower_leg_length}"/>
+        </geometry>
+        <material name="gray"/>
+        <origin xyz="0 0 ${-lower_leg_length/2}" rpy="0 0 0"/>
+      </visual>
+      <collision>
+        <geometry>
+          <cylinder radius="${limb_radius * 0.8}" length="${lower_leg_length}"/>
+        </geometry>
+        <origin xyz="0 0 ${-lower_leg_length/2}" rpy="0 0 0"/>
+      </collision>
+      <inertial>
+        <mass value="${limb_mass * 0.8}"/>
+        <origin xyz="0 0 ${-lower_leg_length/2}"/>
+        <inertia ixx="0.016" ixy="0.0" ixz="0.0"
+                 iyy="0.016" iyz="0.0" izz="0.0002"/>
+      </inertial>
+    </link>
+
+    <joint name="${prefix}_knee_joint" type="revolute">
+      <parent link="${prefix}_upper_leg"/>
+      <child link="${prefix}_lower_leg"/>
+      <origin xyz="0 0 ${-upper_leg_length}" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <limit lower="0" upper="${pi * 0.9}" effort="120.0" velocity="1.0"/>
+    </joint>
+
+    <!-- Foot -->
+    <link name="${prefix}_foot">
+      <visual>
+        <geometry>
+          <box size="0.2 0.1 0.05"/>
+        </geometry>
+        <material name="black">
+          <color rgba="0.1 0.1 0.1 1.0"/>
+        </material>
+        <origin xyz="0.05 0 -0.025" rpy="0 0 0"/>
+      </visual>
+      <collision>
+        <geometry>
+          <box size="0.2 0.1 0.05"/>
+        </geometry>
+        <origin xyz="0.05 0 -0.025" rpy="0 0 0"/>
+      </collision>
+      <inertial>
+        <mass value="0.5"/>
+        <origin xyz="0.05 0 -0.025"/>
+        <inertia ixx="0.0005" ixy="0.0" ixz="0.0"
+                 iyy="0.002" iyz="0.0" izz="0.002"/>
+      </inertial>
+    </link>
+
+    <joint name="${prefix}_ankle_joint" type="revolute">
+      <parent link="${prefix}_lower_leg"/>
+      <child link="${prefix}_foot"/>
+      <origin xyz="0 0 ${-lower_leg_length}" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <limit lower="${-pi/6}" upper="${pi/6}" effort="80.0" velocity="1.0"/>
+    </joint>
+
+  </xacro:macro>
+
+  <!-- Instantiate Legs -->
+  <xacro:leg prefix="left" reflect="1"/>
+  <xacro:leg prefix="right" reflect="-1"/>
+
+  <!-- Arm Macro -->
+  <xacro:macro name="arm" params="prefix reflect">
+
+    <!-- Shoulder -->
+    <link name="${prefix}_shoulder">
+      <visual>
+        <geometry>
+          <sphere radius="0.06"/>
+        </geometry>
+        <material name="dark_gray"/>
+      </visual>
+      <collision>
+        <geometry>
+          <sphere radius="0.06"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <mass value="0.6"/>
+        <inertia ixx="0.0009" ixy="0.0" ixz="0.0"
+                 iyy="0.0009" iyz="0.0" izz="0.0009"/>
+      </inertial>
+    </link>
+
+    <joint name="${prefix}_shoulder_pitch_joint" type="revolute">
+      <parent link="torso"/>
+      <child link="${prefix}_shoulder"/>
+      <origin xyz="0 ${reflect * 0.15} 0.15" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <limit lower="${-pi/2}" upper="${pi}" effort="50.0" velocity="1.5"/>
+    </joint>
+
+    <!-- Upper Arm -->
+    <link name="${prefix}_upper_arm">
+      <visual>
+        <geometry>
+          <cylinder radius="${limb_radius * 0.7}" length="${upper_arm_length}"/>
+        </geometry>
+        <material name="blue"/>
+        <origin xyz="0 0 ${-upper_arm_length/2}" rpy="0 0 0"/>
+      </visual>
+      <collision>
+        <geometry>
+          <cylinder radius="${limb_radius * 0.7}" length="${upper_arm_length}"/>
+        </geometry>
+        <origin xyz="0 0 ${-upper_arm_length/2}" rpy="0 0 0"/>
+      </collision>
+      <inertial>
+        <mass value="1.0"/>
+        <origin xyz="0 0 ${-upper_arm_length/2}"/>
+        <inertia ixx="0.008" ixy="0.0" ixz="0.0"
+                 iyy="0.008" iyz="0.0" izz="0.0002"/>
+      </inertial>
+    </link>
+
+    <joint name="${prefix}_shoulder_roll_joint" type="revolute">
+      <parent link="${prefix}_shoulder"/>
+      <child link="${prefix}_upper_arm"/>
+      <origin xyz="0 ${reflect * 0.02} 0" rpy="0 0 0"/>
+      <axis xyz="1 0 0"/>
+      <limit lower="${reflect * (-pi/2)}" upper="${reflect * pi/2}" effort="50.0" velocity="1.5"/>
+    </joint>
+
+    <!-- Lower Arm (Forearm) -->
+    <link name="${prefix}_lower_arm">
+      <visual>
+        <geometry>
+          <cylinder radius="${limb_radius * 0.6}" length="${lower_arm_length}"/>
+        </geometry>
+        <material name="gray"/>
+        <origin xyz="0 0 ${-lower_arm_length/2}" rpy="0 0 0"/>
+      </visual>
+      <collision>
+        <geometry>
+          <cylinder radius="${limb_radius * 0.6}" length="${lower_arm_length}"/>
+        </geometry>
+        <origin xyz="0 0 ${-lower_arm_length/2}" rpy="0 0 0"/>
+      </collision>
+      <inertial>
+        <mass value="0.7"/>
+        <origin xyz="0 0 ${-lower_arm_length/2}"/>
+        <inertia ixx="0.004" ixy="0.0" ixz="0.0"
+                 iyy="0.004" iyz="0.0" izz="0.0001"/>
+      </inertial>
+    </link>
+
+    <joint name="${prefix}_elbow_joint" type="revolute">
+      <parent link="${prefix}_upper_arm"/>
+      <child link="${prefix}_lower_arm"/>
+      <origin xyz="0 0 ${-upper_arm_length}" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <limit lower="0" upper="${pi * 0.8}" effort="40.0" velocity="2.0"/>
+    </joint>
+
+    <!-- Hand -->
+    <link name="${prefix}_hand">
+      <visual>
+        <geometry>
+          <box size="0.05 0.08 0.12"/>
+        </geometry>
+        <material name="skin"/>
+        <origin xyz="0 0 -0.06" rpy="0 0 0"/>
+      </visual>
+      <collision>
+        <geometry>
+          <box size="0.05 0.08 0.12"/>
+        </geometry>
+        <origin xyz="0 0 -0.06" rpy="0 0 0"/>
+      </collision>
+      <inertial>
+        <mass value="0.3"/>
+        <origin xyz="0 0 -0.06"/>
+        <inertia ixx="0.0004" ixy="0.0" ixz="0.0"
+                 iyy="0.0003" iyz="0.0" izz="0.0001"/>
+      </inertial>
+    </link>
+
+    <joint name="${prefix}_wrist_joint" type="revolute">
+      <parent link="${prefix}_lower_arm"/>
+      <child link="${prefix}_hand"/>
+      <origin xyz="0 0 ${-lower_arm_length}" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <limit lower="${-pi/4}" upper="${pi/4}" effort="20.0" velocity="2.0"/>
+    </joint>
+
+  </xacro:macro>
+
+  <!-- Instantiate Arms -->
+  <xacro:arm prefix="left" reflect="1"/>
+  <xacro:arm prefix="right" reflect="-1"/>
+
+  <!-- Gazebo plugins -->
+  <gazebo>
+    <plugin filename="libgazebo_ros2_control.so" name="gazebo_ros2_control">
+      <parameters>$(find humanoid_robot)/config/controllers.yaml</parameters>
+    </plugin>
+  </gazebo>
+
+  <!-- ros2_control -->
+  <ros2_control name="HumanoidSystem" type="system">
+    <hardware>
+      <plugin>gazebo_ros2_control/GazeboSystem</plugin>
+    </hardware>
+
+    <!-- Joint interfaces -->
+    <xacro:macro name="joint_interface" params="name">
+      <joint name="${name}">
+        <command_interface name="position">
+          <param name="min">{-3.14}</param>
+          <param name="max">{3.14}</param>
+        </command_interface>
+        <command_interface name="velocity">
+          <param name="min">{-5.0}</param>
+          <param name="max">{5.0}</param>
+        </command_interface>
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+        <state_interface name="effort"/>
+      </joint>
+    </xacro:macro>
+
+    <xacro:joint_interface name="neck_joint"/>
+    <xacro:joint_interface name="left_hip_yaw_joint"/>
+    <xacro:joint_interface name="left_hip_roll_joint"/>
+    <xacro:joint_interface name="left_hip_pitch_joint"/>
+    <xacro:joint_interface name="left_knee_joint"/>
+    <xacro:joint_interface name="left_ankle_joint"/>
+    <xacro:joint_interface name="right_hip_yaw_joint"/>
+    <xacro:joint_interface name="right_hip_roll_joint"/>
+    <xacro:joint_interface name="right_hip_pitch_joint"/>
+    <xacro:joint_interface name="right_knee_joint"/>
+    <xacro:joint_interface name="right_ankle_joint"/>
+    <xacro:joint_interface name="left_shoulder_pitch_joint"/>
+    <xacro:joint_interface name="left_shoulder_roll_joint"/>
+    <xacro:joint_interface name="left_elbow_joint"/>
+    <xacro:joint_interface name="left_wrist_joint"/>
+    <xacro:joint_interface name="right_shoulder_pitch_joint"/>
+    <xacro:joint_interface name="right_shoulder_roll_joint"/>
+    <xacro:joint_interface name="right_elbow_joint"/>
+    <xacro:joint_interface name="right_wrist_joint"/>
+  </ros2_control>
+
+</robot>
+```
+
+#### 1.3 Validate URDF
+
+```bash
+# Install URDF checker
+sudo apt install -y liburdfdom-tools
+
+# Check URDF syntax
+check_urdf urdf/humanoid.urdf.xacro
+
+# Visualize (optional)
+urdf_to_graphviz urdf/humanoid.urdf.xacro
+```
+
+---
+
+### Step 2: Joint Controller Configuration
+
+#### 2.1 Create Controller Configuration
+
+Create `config/controllers.yaml`:
+
+```yaml
+controller_manager:
+  ros__parameters:
+    update_rate: 100  # Hz
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    joint_trajectory_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+    forward_position_controller:
+      type: forward_command_controller/ForwardCommandController
+
+joint_trajectory_controller:
+  ros__parameters:
+    joints:
+      - neck_joint
+      - left_hip_yaw_joint
+      - left_hip_roll_joint
+      - left_hip_pitch_joint
+      - left_knee_joint
+      - left_ankle_joint
+      - right_hip_yaw_joint
+      - right_hip_roll_joint
+      - right_hip_pitch_joint
+      - right_knee_joint
+      - right_ankle_joint
+      - left_shoulder_pitch_joint
+      - left_shoulder_roll_joint
+      - left_elbow_joint
+      - left_wrist_joint
+      - right_shoulder_pitch_joint
+      - right_shoulder_roll_joint
+      - right_elbow_joint
+      - right_wrist_joint
+
+    command_interfaces:
+      - position
+
+    state_interfaces:
+      - position
+      - velocity
+
+    gains:
+      neck_joint: {p: 100.0, d: 10.0, i: 1.0}
+      left_hip_yaw_joint: {p: 1000.0, d: 50.0, i: 10.0}
+      left_hip_roll_joint: {p: 1000.0, d: 50.0, i: 10.0}
+      left_hip_pitch_joint: {p: 1500.0, d: 75.0, i: 15.0}
+      left_knee_joint: {p: 1200.0, d: 60.0, i: 12.0}
+      left_ankle_joint: {p: 800.0, d: 40.0, i: 8.0}
+      right_hip_yaw_joint: {p: 1000.0, d: 50.0, i: 10.0}
+      right_hip_roll_joint: {p: 1000.0, d: 50.0, i: 10.0}
+      right_hip_pitch_joint: {p: 1500.0, d: 75.0, i: 15.0}
+      right_knee_joint: {p: 1200.0, d: 60.0, i: 12.0}
+      right_ankle_joint: {p: 800.0, d: 40.0, i: 8.0}
+      left_shoulder_pitch_joint: {p: 500.0, d: 25.0, i: 5.0}
+      left_shoulder_roll_joint: {p: 500.0, d: 25.0, i: 5.0}
+      left_elbow_joint: {p: 400.0, d: 20.0, i: 4.0}
+      left_wrist_joint: {p: 200.0, d: 10.0, i: 2.0}
+      right_shoulder_pitch_joint: {p: 500.0, d: 25.0, i: 5.0}
+      right_shoulder_roll_joint: {p: 500.0, d: 25.0, i: 5.0}
+      right_elbow_joint: {p: 400.0, d: 20.0, i: 4.0}
+      right_wrist_joint: {p: 200.0, d: 10.0, i: 2.0}
+
+forward_position_controller:
+  ros__parameters:
+    joints:
+      - neck_joint
+      - left_hip_yaw_joint
+      - left_hip_roll_joint
+      - left_hip_pitch_joint
+      - left_knee_joint
+      - left_ankle_joint
+      - right_hip_yaw_joint
+      - right_hip_roll_joint
+      - right_hip_pitch_joint
+      - right_knee_joint
+      - right_ankle_joint
+      - left_shoulder_pitch_joint
+      - left_shoulder_roll_joint
+      - left_elbow_joint
+      - left_wrist_joint
+      - right_shoulder_pitch_joint
+      - right_shoulder_roll_joint
+      - right_elbow_joint
+      - right_wrist_joint
+    interface_name: position
+```
+
+#### 2.2 Create Launch File
+
+Create `launch/humanoid.launch.py`:
+
+```python
+import os
+from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch_ros.actions import Node
+from launch_ros.substitutions import FindPackageShare
+from ament_index_python.packages import get_package_share_directory
+
+def generate_launch_description():
+    pkg_share = get_package_share_directory('humanoid_robot')
+
+    urdf_file = os.path.join(pkg_share, 'urdf', 'humanoid.urdf.xacro')
+
+    # Process URDF
+    import xacro
+    robot_description = xacro.process_file(urdf_file).toxml()
+
+    # Robot State Publisher
+    robot_state_publisher = Node(
+        package='robot_state_publisher',
+        executable='robot_state_publisher',
+        name='robot_state_publisher',
+        parameters=[{'robot_description': robot_description}],
+        output='screen'
+    )
+
+    # Gazebo
+    gazebo = IncludeLaunchDescription(
+        PathJoinSubstitution([
+            FindPackageShare('gazebo_ros'),
+            'launch',
+            'gazebo.launch.py'
+        ])
+    )
+
+    # Spawn Robot
+    spawn_robot = Node(
+        package='gazebo_ros',
+        executable='spawn_entity.py',
+        arguments=[
+            '-topic', 'robot_description',
+            '-entity', 'humanoid_robot',
+            '-x', '0.0',
+            '-y', '0.0',
+            '-z', '1.0'
+        ],
+        output='screen'
+    )
+
+    # Controller Manager
+    controller_manager = Node(
+        package='controller_manager',
+        executable='ros2_control_node',
+        parameters=[
+            {'robot_description': robot_description},
+            os.path.join(pkg_share, 'config', 'controllers.yaml')
+        ],
+        output='screen'
+    )
+
+    # Joint State Broadcaster
+    joint_state_broadcaster_spawner = Node(
+        package='controller_manager',
+        executable='spawner',
+        arguments=['joint_state_broadcaster'],
+        output='screen'
+    )
+
+    # Joint Trajectory Controller
+    joint_trajectory_controller_spawner = Node(
+        package='controller_manager',
+        executable='spawner',
+        arguments=['joint_trajectory_controller'],
+        output='screen'
+    )
+
+    # RViz
+    rviz_config = os.path.join(pkg_share, 'config', 'humanoid.rviz')
+    rviz = Node(
+        package='rviz2',
+        executable='rviz2',
+        name='rviz2',
+        arguments=['-d', rviz_config],
+        output='screen'
+    )
+
+    return LaunchDescription([
+        robot_state_publisher,
+        gazebo,
+        spawn_robot,
+        controller_manager,
+        joint_state_broadcaster_spawner,
+        joint_trajectory_controller_spawner,
+        rviz
+    ])
+```
+
+---
+
+### Step 3: Kinematics Implementation
+
+#### 3.1 Install KDL Library
+
+```bash
+sudo apt install -y ros-jazzy-kdl-parser ros-jazzy-python-orocos-kdl
+```
+
+#### 3.2 Create Forward Kinematics Node
+
+Create `scripts/forward_kinematics.py`:
+
+```python
+#!/usr/bin/env python3
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import JointState
+from geometry_msgs.msg import PoseStamped
+from urdf_parser_py.urdf import URDF
+from kdl_parser_py.urdf import treeFromUrdfModel
+import PyKDL as kdl
+import numpy as np
+
+class ForwardKinematics(Node):
+    def __init__(self):
+        super().__init__('forward_kinematics')
+
+        # Subscribe to joint states
+        self.joint_sub = self.create_subscription(
+            JointState, '/joint_states', self.joint_callback, 10)
+
+        # Publishers for end-effector poses
+        self.left_hand_pub = self.create_publisher(
+            PoseStamped, '/left_hand_pose', 10)
+        self.right_hand_pub = self.create_publisher(
+            PoseStamped, '/right_hand_pose', 10)
+        self.left_foot_pub = self.create_publisher(
+            PoseStamped, '/left_foot_pose', 10)
+        self.right_foot_pub = self.create_publisher(
+            PoseStamped, '/right_foot_pose', 10)
+
+        # Load URDF and create KDL tree
+        self.robot = URDF.from_parameter_server()
+        success, self.kdl_tree = treeFromUrdfModel(self.robot)
+
+        if not success:
+            self.get_logger().error('Failed to parse URDF')
+            return
+
+        # Create FK solvers for each chain
+        self.fk_solvers = {}
+        self.create_fk_solver('base_link', 'left_hand', 'left_hand')
+        self.create_fk_solver('base_link', 'right_hand', 'right_hand')
+        self.create_fk_solver('base_link', 'left_foot', 'left_foot')
+        self.create_fk_solver('base_link', 'right_foot', 'right_foot')
+
+        self.latest_joint_state = None
+
+    def create_fk_solver(self, root, tip, name):
+        """Create FK solver for a kinematic chain"""
+        chain = self.kdl_tree.getChain(root, tip)
+        self.fk_solvers[name] = {
+            'solver': kdl.ChainFkSolverPos_recursive(chain),
+            'chain': chain,
+            'n_joints': chain.getNrOfJoints()
+        }
+
+    def joint_callback(self, msg):
+        """Process joint states and compute FK"""
+        self.latest_joint_state = msg
+
+        # Compute FK for each end-effector
+        self.publish_end_effector_pose('left_hand', self.left_hand_pub)
+        self.publish_end_effector_pose('right_hand', self.right_hand_pub)
+        self.publish_end_effector_pose('left_foot', self.left_foot_pub)
+        self.publish_end_effector_pose('right_foot', self.right_foot_pub)
+
+    def publish_end_effector_pose(self, name, publisher):
+        """Compute and publish end-effector pose"""
+        if self.latest_joint_state is None:
+            return
+
+        solver_data = self.fk_solvers[name]
+        solver = solver_data['solver']
+        n_joints = solver_data['n_joints']
+
+        # Extract relevant joint positions
+        joint_array = kdl.JntArray(n_joints)
+        # TODO: Map joint states to KDL array based on chain
+
+        # Compute FK
+        end_frame = kdl.Frame()
+        solver.JntToCart(joint_array, end_frame)
+
+        # Publish pose
+        pose_msg = PoseStamped()
+        pose_msg.header.stamp = self.get_clock().now().to_msg()
+        pose_msg.header.frame_id = 'base_link'
+
+        pose_msg.pose.position.x = end_frame.p.x()
+        pose_msg.pose.position.y = end_frame.p.y()
+        pose_msg.pose.position.z = end_frame.p.z()
+
+        quat = end_frame.M.GetQuaternion()
+        pose_msg.pose.orientation.x = quat[0]
+        pose_msg.pose.orientation.y = quat[1]
+        pose_msg.pose.orientation.z = quat[2]
+        pose_msg.pose.orientation.w = quat[3]
+
+        publisher.publish(pose_msg)
+
+def main():
+    rclpy.init()
+    node = ForwardKinematics()
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+Make executable:
+```bash
+chmod +x scripts/forward_kinematics.py
+```
+
+---
+
+### Step 4: Balance Control
+
+#### 4.1 Create Balance Controller
+
+Create `src/balance_controller.cpp`:
+
+```cpp
+#include "rclcpp/rclcpp.hpp"
+#include "sensor_msgs/msg/joint_state.hpp"
+#include "geometry_msgs/msg/wrench_stamped.hpp"
+#include "trajectory_msgs/msg/joint_trajectory.hpp"
+#include <Eigen/Dense>
+#include <vector>
+
+class BalanceController : public rclcpp::Node
+{
+public:
+  BalanceController() : Node("balance_controller")
+  {
+    // Subscribe to joint states
+    joint_sub_ = this->create_subscription<sensor_msgs::msg::JointState>(
+      "/joint_states", 10,
+      std::bind(&BalanceController::joint_callback, this, std::placeholders::_1));
+
+    // Subscribe to force/torque sensors (feet)
+    left_ft_sub_ = this->create_subscription<geometry_msgs::msg::WrenchStamped>(
+      "/left_foot_force", 10,
+      std::bind(&BalanceController::left_ft_callback, this, std::placeholders::_1));
+
+    right_ft_sub_ = this->create_subscription<geometry_msgs::msg::WrenchStamped>(
+      "/right_foot_force", 10,
+      std::bind(&BalanceController::right_ft_callback, this, std::placeholders::_1));
+
+    // Publisher for joint commands
+    cmd_pub_ = this->create_publisher<trajectory_msgs::msg::JointTrajectory>(
+      "/joint_trajectory_controller/joint_trajectory", 10);
+
+    // Control loop timer (100 Hz)
+    timer_ = this->create_wall_timer(
+      std::chrono::milliseconds(10),
+      std::bind(&BalanceController::control_loop, this));
+
+    // Initialize target pose (standing)
+    init_standing_pose();
+
+    RCLCPP_INFO(this->get_logger(), "Balance controller started");
+  }
+
+private:
+  void init_standing_pose()
+  {
+    // Define neutral standing pose (all angles in radians)
+    standing_pose_ = {
+      {"neck_joint", 0.0},
+      {"left_hip_yaw_joint", 0.0},
+      {"left_hip_roll_joint", 0.05},   // Slight abduction
+      {"left_hip_pitch_joint", -0.1},   // Slight flexion
+      {"left_knee_joint", 0.2},         // Knee bend
+      {"left_ankle_joint", 0.1},        // Plantar flexion
+      {"right_hip_yaw_joint", 0.0},
+      {"right_hip_roll_joint", -0.05},
+      {"right_hip_pitch_joint", -0.1},
+      {"right_knee_joint", 0.2},
+      {"right_ankle_joint", 0.1},
+      {"left_shoulder_pitch_joint", 0.3},
+      {"left_shoulder_roll_joint", 0.2},
+      {"left_elbow_joint", 0.5},
+      {"left_wrist_joint", 0.0},
+      {"right_shoulder_pitch_joint", 0.3},
+      {"right_shoulder_roll_joint", -0.2},
+      {"right_elbow_joint", 0.5},
+      {"right_wrist_joint", 0.0}
+    };
+  }
+
+  void joint_callback(const sensor_msgs::msg::JointState::SharedPtr msg)
+  {
+    current_joint_state_ = msg;
+  }
+
+  void left_ft_callback(const geometry_msgs::msg::WrenchStamped::SharedPtr msg)
+  {
+    left_foot_force_ = msg->wrench;
+  }
+
+  void right_ft_callback(const geometry_msgs::msg::WrenchStamped::SharedPtr msg)
+  {
+    right_foot_force_ = msg->wrench;
+  }
+
+  void control_loop()
+  {
+    if (!current_joint_state_) return;
+
+    // Compute Center of Pressure (CoP)
+    auto cop = compute_cop();
+
+    // Simple balance control: adjust ankle torques to keep CoP centered
+    double cop_error_x = cop.first;   // Error in forward/backward
+    double cop_error_y = cop.second;  // Error in left/right
+
+    // PD control gains
+    const double kp_ankle = 50.0;
+    const double kd_ankle = 5.0;
+
+    // Adjust ankle joints based on CoP error
+    auto trajectory_msg = trajectory_msgs::msg::JointTrajectory();
+    trajectory_msg.joint_names = get_joint_names();
+
+    trajectory_msgs::msg::JointTrajectoryPoint point;
+    point.positions = get_target_positions(cop_error_x, cop_error_y);
+    point.time_from_start = rclcpp::Duration::from_seconds(0.1);
+
+    trajectory_msg.points.push_back(point);
+    cmd_pub_->publish(trajectory_msg);
+
+    // Log balance state
+    if (std::abs(cop_error_x) > 0.05 || std::abs(cop_error_y) > 0.05) {
+      RCLCPP_WARN(this->get_logger(),
+                  "Balance error - CoP: (%.3f, %.3f)", cop_error_x, cop_error_y);
+    }
+  }
+
+  std::pair<double, double> compute_cop()
+  {
+    // Compute Center of Pressure from foot forces
+    double left_fz = left_foot_force_.force.z;
+    double right_fz = right_foot_force_.force.z;
+    double total_fz = left_fz + right_fz;
+
+    if (total_fz < 10.0) {  // Minimum contact force
+      return {0.0, 0.0};
+    }
+
+    // Simplified CoP calculation (assumes feet are at ±0.1m in y)
+    double cop_y = (left_fz * 0.1 - right_fz * 0.1) / total_fz;
+
+    // For x-direction, use torque around ankle
+    double cop_x = (left_foot_force_.torque.y + right_foot_force_.torque.y) / total_fz;
+
+    return {cop_x, cop_y};
+  }
+
+  std::vector<std::string> get_joint_names()
+  {
+    return {
+      "neck_joint",
+      "left_hip_yaw_joint", "left_hip_roll_joint", "left_hip_pitch_joint",
+      "left_knee_joint", "left_ankle_joint",
+      "right_hip_yaw_joint", "right_hip_roll_joint", "right_hip_pitch_joint",
+      "right_knee_joint", "right_ankle_joint",
+      "left_shoulder_pitch_joint", "left_shoulder_roll_joint",
+      "left_elbow_joint", "left_wrist_joint",
+      "right_shoulder_pitch_joint", "right_shoulder_roll_joint",
+      "right_elbow_joint", "right_wrist_joint"
+    };
+  }
+
+  std::vector<double> get_target_positions(double cop_error_x, double cop_error_y)
+  {
+    std::vector<double> positions;
+    auto joint_names = get_joint_names();
+
+    for (const auto& name : joint_names) {
+      double target = standing_pose_[name];
+
+      // Adjust ankle joints based on CoP error
+      if (name == "left_ankle_joint" || name == "right_ankle_joint") {
+        target += cop_error_x * 0.5;  // Forward/backward correction
+      }
+      if (name == "left_hip_roll_joint") {
+        target += cop_error_y * 0.3;   // Left/right correction
+      }
+      if (name == "right_hip_roll_joint") {
+        target -= cop_error_y * 0.3;
+      }
+
+      positions.push_back(target);
+    }
+
+    return positions;
+  }
+
+  rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_sub_;
+  rclcpp::Subscription<geometry_msgs::msg::WrenchStamped>::SharedPtr left_ft_sub_;
+  rclcpp::Subscription<geometry_msgs::msg::WrenchStamped>::SharedPtr right_ft_sub_;
+  rclcpp::Publisher<trajectory_msgs::msg::JointTrajectory>::SharedPtr cmd_pub_;
+  rclcpp::TimerBase::SharedPtr timer_;
+
+  sensor_msgs::msg::JointState::SharedPtr current_joint_state_;
+  geometry_msgs::msg::Wrench left_foot_force_;
+  geometry_msgs::msg::Wrench right_foot_force_;
+
+  std::map<std::string, double> standing_pose_;
+};
+
+int main(int argc, char * argv[])
+{
+  rclcpp::init(argc, argv);
+  rclcpp::spin(std::make_shared<BalanceController>());
+  rclcpp::shutdown();
+  return 0;
+}
+```
+
+#### 4.2 Update CMakeLists.txt
+
+```cmake
+find_package(Eigen3 REQUIRED)
+
+add_executable(balance_controller src/balance_controller.cpp)
+ament_target_dependencies(balance_controller
+  rclcpp
+  sensor_msgs
+  geometry_msgs
+  trajectory_msgs
+  Eigen3
+)
+
+install(TARGETS
+  balance_controller
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+install(PROGRAMS
+  scripts/forward_kinematics.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+install(DIRECTORY
+  urdf launch config
+  DESTINATION share/${PROJECT_NAME}
+)
+```
+
+---
+
+### Step 5: Testing and Refinement
+
+#### 5.1 Build and Launch
+
+```bash
+cd ~/ros2_ws
+colcon build --packages-select humanoid_robot
+source install/setup.bash
+
+# Launch humanoid in Gazebo
+ros2 launch humanoid_robot humanoid.launch.py
+```
+
+#### 5.2 Test Joint Control
+
+```bash
+# Publish test joint command
+ros2 topic pub /joint_trajectory_controller/joint_trajectory \
+  trajectory_msgs/msg/JointTrajectory \
+  "{
+    joint_names: ['left_shoulder_pitch_joint', 'right_shoulder_pitch_joint'],
+    points: [{
+      positions: [1.5, 1.5],
+      time_from_start: {sec: 2}
+    }]
+  }"
+```
+
+#### 5.3 Test Balance Controller
+
+```bash
+# Run balance controller
+ros2 run humanoid_robot balance_controller
+
+# Monitor balance
+ros2 topic echo /left_foot_force
+ros2 topic echo /right_foot_force
+```
+
+#### 5.4 Create Test Suite
+
+Create `test/test_humanoid.py`:
+
+```python
+#!/usr/bin/env python3
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import JointState
+from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+import time
+
+class HumanoidTester(Node):
+    def __init__(self):
+        super().__init__('humanoid_tester')
+
+        self.joint_sub = self.create_subscription(
+            JointState, '/joint_states', self.joint_callback, 10)
+
+        self.cmd_pub = self.create_publisher(
+            JointTrajectory, '/joint_trajectory_controller/joint_trajectory', 10)
+
+        self.joints_received = False
+
+    def joint_callback(self, msg):
+        self.joints_received = True
+        self.get_logger().info(f'Received {len(msg.position)} joint states')
+
+    def test_joint_states(self):
+        """Test that all joints are publishing"""
+        self.get_logger().info('Testing joint states...')
+
+        for _ in range(10):
+            rclpy.spin_once(self, timeout_sec=0.5)
+            if self.joints_received:
+                break
+
+        assert self.joints_received, "No joint states received"
+        self.get_logger().info('✓ Joint states OK')
+
+    def test_arm_movement(self):
+        """Test arm movement"""
+        self.get_logger().info('Testing arm movement...')
+
+        trajectory = JointTrajectory()
+        trajectory.joint_names = [
+            'left_shoulder_pitch_joint',
+            'left_elbow_joint',
+            'right_shoulder_pitch_joint',
+            'right_elbow_joint'
+        ]
+
+        # Raise arms
+        point = JointTrajectoryPoint()
+        point.positions = [1.5, 0.5, 1.5, 0.5]
+        point.time_from_start = rclcpp.Duration(seconds=2.0).to_msg()
+        trajectory.points.append(point)
+
+        self.cmd_pub.publish(trajectory)
+        time.sleep(3.0)
+
+        self.get_logger().info('✓ Arm movement test complete')
+
+    def test_standing_stability(self):
+        """Test standing pose stability"""
+        self.get_logger().info('Testing standing stability...')
+
+        # Monitor for 5 seconds
+        start_time = time.time()
+        while time.time() - start_time < 5.0:
+            rclpy.spin_once(self, timeout_sec=0.1)
+
+        self.get_logger().info('✓ Standing stability test complete')
+
+def main():
+    rclpy.init()
+    tester = HumanoidTester()
+
+    try:
+        tester.test_joint_states()
+        tester.test_arm_movement()
+        tester.test_standing_stability()
+        tester.get_logger().info('All tests passed!')
+    except AssertionError as e:
+        tester.get_logger().error(f'Test failed: {e}')
+    finally:
+        tester.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+Make executable and run:
+```bash
+chmod +x test/test_humanoid.py
+ros2 run humanoid_robot test_humanoid.py
+```
+
+## Expected Outcomes
+
+After completing this project, you'll have:
+- A functional humanoid robot simulation
+- Understanding of humanoid kinematics
+- Experience with multi-joint control
+- Practical physics simulation skills
+
+## Next Steps
+
+Once you've completed this project, you can:
+- Add bipedal walking (see Chapter 19: Locomotion)
+- Implement arm manipulation capabilities
+- Integrate perception sensors
+- Proceed to **Project 3: Conversational Robot** for AI integration
+
+## Resources
+
+- [URDF Tutorials](http://wiki.ros.org/urdf/Tutorials)
+- [MoveIt 2 Documentation](https://moveit.picknik.ai/)
+- [Appendix B: Python Guide](/docs/appendices/appendix-b-python-guide)

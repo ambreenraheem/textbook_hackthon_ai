@@ -1,0 +1,12 @@
+{
+  "label": "Part VIII: Deployment",
+  "position": 8,
+  "collapsible": true,
+  "collapsed": true,
+  "link": {
+    "type": "generated-index",
+    "title": "Part VIII: Deployment & Applications",
+    "description": "Explore industrial robotics, service and domestic applications, hardware electronics, and production systems.",
+    "slug": "/part-08-deployment"
+  }
+}

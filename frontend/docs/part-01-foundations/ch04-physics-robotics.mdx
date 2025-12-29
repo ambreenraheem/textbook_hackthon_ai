@@ -1,0 +1,406 @@
+---
+id: ch04-physics-robotics
+title: Chapter 4 - Physics for Robotics
+description: Learn dynamics, forces, torque, momentum, and energy principles governing robot motion.
+sidebar_label: Ch 4. Physics for Robotics
+sidebar_position: 4
+keywords: [dynamics, forces, torque, momentum, energy conservation]
+difficulty: intermediate
+estimatedReadingTime: 25
+---
+
+# Chapter 4: Physics for Robotics
+
+## Learning Objectives
+
+By the end of this chapter, you will be able to:
+- Understand Newton's laws applied to robotic systems
+- Calculate forces, torques, and moments in robot mechanisms
+- Apply conservation of energy and momentum principles
+- Model dynamic behavior of robot links and joints
+
+## Introduction
+
+Physics forms the foundation of robotics. Every robot, from simple arms to complex humanoids, operates under the same physical laws that govern all motion and forces. Understanding these principles is essential for designing control systems, predicting behavior, and troubleshooting problems.
+
+## Newton's Laws of Motion
+
+### First Law: Inertia
+
+**Law**: An object at rest stays at rest, and an object in motion stays in motion with constant velocity, unless acted upon by a net external force.
+
+**Robotics Applications:**
+- Heavier robot links resist changes in motion (higher inertia)
+- Starting and stopping motion requires force proportional to mass
+- Smooth trajectories minimize jerk (sudden acceleration changes)
+
+**Example**: A humanoid robot's arm at rest will remain stationary until motors apply torque to move it.
+
+### Second Law: Force and Acceleration
+
+**Law**: F = ma (Force equals mass times acceleration)
+
+**Robotics Applications:**
+- Motor torque requirements scale with link mass
+- Faster movements require more force
+- Payload capacity depends on actuator strength
+
+**Example**: To accelerate a 5 kg robot arm at 2 m/s², you need:
+```
+F = ma = 5 kg × 2 m/s² = 10 N
+```
+
+### Third Law: Action-Reaction
+
+**Law**: For every action, there is an equal and opposite reaction.
+
+**Robotics Applications:**
+- Ground reaction forces during walking
+- Recoil when manipulating objects
+- Momentum conservation in floating-base systems
+
+**Example**: When a humanoid robot pushes against the ground with force F, the ground pushes back with equal force -F, enabling forward motion.
+
+## Forces in Robotic Systems
+
+### Types of Forces
+
+**1. Gravitational Force**
+```
+F_gravity = m × g
+```
+Where g ≈ 9.81 m/s² on Earth
+
+**Impact**: Robot joints must continuously counteract gravity to maintain posture.
+
+**2. Friction Forces**
+
+**Static Friction**: Prevents motion initiation
+```
+F_static ≤ μ_s × N
+```
+
+**Kinetic Friction**: Opposes ongoing motion
+```
+F_kinetic = μ_k × N
+```
+
+Where:
+- μ_s, μ_k are coefficients of friction
+- N is the normal force
+
+**Example**: A robot gripper must apply sufficient normal force to overcome static friction when lifting objects.
+
+**3. Contact Forces**
+
+Forces exchanged when robots interact with:
+- Objects being manipulated
+- Walking surfaces
+- Humans (in collaborative scenarios)
+
+**4. Inertial Forces**
+
+Forces arising from acceleration:
+```
+F_inertial = m × a
+```
+
+### Force Vectors and Composition
+
+Forces are vectors with magnitude and direction. Multiple forces combine using vector addition:
+
+```
+F_total = F₁ + F₂ + ... + Fₙ
+```
+
+**Example**: A robot arm endpoint experiences:
+- Gravity pulling downward: F_g = [0, 0, -mg]
+- Applied force by actuator: F_a = [Fx, Fy, Fz]
+- Net force: F_net = F_g + F_a
+
+## Torque and Rotational Dynamics
+
+### Torque (Moment)
+
+Torque causes rotational motion around an axis:
+
+```
+τ = r × F
+```
+
+Where:
+- τ (tau) is torque (N·m)
+- r is the distance vector from rotation axis
+- × denotes cross product
+- F is the applied force
+
+**Magnitude**: τ = r × F × sin(θ)
+
+Where θ is the angle between r and F.
+
+**Maximum torque** occurs when force is perpendicular to the lever arm (θ = 90°).
+
+### Moment of Inertia
+
+Resistance to rotational acceleration:
+
+```
+τ = I × α
+```
+
+Where:
+- I is moment of inertia (kg·m²)
+- α (alpha) is angular acceleration (rad/s²)
+
+**For simple shapes:**
+
+**Solid cylinder rotating about its center:**
+```
+I = (1/2) × m × r²
+```
+
+**Thin rod rotating about its center:**
+```
+I = (1/12) × m × L²
+```
+
+**Complex robots**: Compute I for each link and sum contributions.
+
+### Rotational Kinetic Energy
+
+```
+KE_rotational = (1/2) × I × ω²
+```
+
+Where ω (omega) is angular velocity (rad/s).
+
+**Example**: A robot joint spinning at 3 rad/s with I = 0.5 kg·m²:
+```
+KE = (1/2) × 0.5 × 3² = 2.25 J
+```
+
+## Momentum
+
+### Linear Momentum
+
+```
+p = m × v
+```
+
+**Conservation**: In isolated systems, total momentum is conserved.
+
+**Robotics Application**: When a robot throws an object, the robot and object momenta change such that:
+```
+Δp_robot + Δp_object = 0
+```
+
+### Angular Momentum
+
+```
+L = I × ω
+```
+
+**Conservation**: Important for robots with no ground contact (e.g., humanoid in flight phase during jumping).
+
+**Example**: An astronaut robot in space cannot change its angular momentum without external torque (e.g., thrusters).
+
+### Impulse
+
+Change in momentum due to force applied over time:
+
+```
+J = F × Δt = Δp
+```
+
+**Robotics Application**: Impact forces during foot landing can be reduced by:
+- Extending impact duration (compliant joints)
+- Distributing force over larger area (foot design)
+
+## Energy Principles
+
+### Forms of Energy in Robotics
+
+**1. Kinetic Energy (Translational)**
+```
+KE = (1/2) × m × v²
+```
+
+**2. Kinetic Energy (Rotational)**
+```
+KE = (1/2) × I × ω²
+```
+
+**3. Potential Energy (Gravitational)**
+```
+PE = m × g × h
+```
+
+Where h is height above reference point.
+
+**4. Elastic Potential Energy**
+```
+PE_elastic = (1/2) × k × x²
+```
+
+For springs with stiffness k and displacement x.
+
+### Conservation of Energy
+
+In the absence of non-conservative forces (friction), total mechanical energy is conserved:
+
+```
+KE + PE = constant
+```
+
+**Robotics Application**: A robot arm lifting an object converts electrical energy to:
+1. Kinetic energy (motion)
+2. Potential energy (height gain)
+3. Heat (friction losses)
+
+### Power
+
+Rate of energy transfer:
+
+```
+P = F × v  (translational)
+P = τ × ω  (rotational)
+```
+
+**Example**: A motor producing 10 N·m torque at 5 rad/s delivers:
+```
+P = 10 × 5 = 50 W
+```
+
+**Energy Efficiency**:
+```
+Efficiency = (Useful output energy) / (Input energy) × 100%
+```
+
+Typical electric motors: 80-95% efficiency
+Hydraulic systems: 50-70% efficiency
+
+## Dynamics of Robot Mechanisms
+
+### Forward Dynamics
+
+**Problem**: Given joint torques τ, find joint accelerations.
+
+**Equation of motion** (simplified single joint):
+```
+τ = I × α + friction + gravity_torque
+```
+
+**Multi-joint systems** use Euler-Lagrange equations:
+```
+τ = M(q) × q̈ + C(q, q̇) × q̇ + G(q)
+```
+
+Where:
+- M(q): Inertia matrix
+- C(q, q̇): Coriolis and centrifugal terms
+- G(q): Gravity terms
+- q, q̇, q̈: Joint positions, velocities, accelerations
+
+### Inverse Dynamics
+
+**Problem**: Given desired motion (q, q̇, q̈), compute required torques τ.
+
+**Used for**:
+- Feedforward control
+- Gravity compensation
+- Trajectory execution
+
+### Center of Mass (CoM) Dynamics
+
+For humanoid robots, maintaining balance requires:
+
+```
+F_ground = m × a_CoM + m × g
+```
+
+**Zero Moment Point (ZMP)**: The point where net moment from ground reaction forces is zero. For stable walking, ZMP must remain within the support polygon (area covered by feet).
+
+## Friction and Contact Mechanics
+
+### Coulomb Friction Model
+
+**Stiction** (static friction): Prevents motion when F_applied < μ_s × N
+
+**Sliding** (kinetic friction): F_friction = μ_k × N during motion
+
+Typical values:
+- Steel on steel: μ_s ≈ 0.7, μ_k ≈ 0.6
+- Rubber on concrete: μ_s ≈ 1.0, μ_k ≈ 0.8
+- Teflon on steel: μ_s ≈ 0.04, μ_k ≈ 0.04
+
+### Impact and Collision
+
+**Coefficient of Restitution (e)**:
+```
+e = (v_separation) / (v_approach)
+```
+
+- e = 1: Perfectly elastic (bouncy ball)
+- e = 0: Perfectly inelastic (clay)
+
+**Example**: Robot foot landing with e = 0.2 indicates significant energy absorption (good for shock protection).
+
+## Practical Examples
+
+### Example 1: Required Torque for Lifting
+
+**Problem**: A robot arm with 2 kg mass, 0.5 m length, lifts a 1 kg object at its tip. Find required shoulder torque when arm is horizontal.
+
+**Solution**:
+```
+τ_arm = m_arm × g × (L/2) = 2 × 9.81 × 0.25 = 4.905 N·m
+τ_load = m_load × g × L = 1 × 9.81 × 0.5 = 4.905 N·m
+τ_total = τ_arm + τ_load = 9.81 N·m
+```
+
+### Example 2: Walking Energy Cost
+
+**Problem**: A 70 kg humanoid walks at 1 m/s. Estimate power consumption.
+
+**Human benchmark**: ~2 W/kg → 140 W for locomotion
+
+**Typical humanoid**: ~10 W/kg → 700 W
+
+**Efficiency gap**: 5× room for improvement through:
+- Better gait algorithms
+- Elastic energy storage (springs in joints)
+- Optimized mechanical design
+
+### Example 3: Gripper Force
+
+**Problem**: Lift a 0.5 kg object with two-finger gripper. What normal force is required if μ_s = 0.6?
+
+**Solution**:
+```
+Weight: W = m × g = 0.5 × 9.81 = 4.905 N
+Required friction per finger: F_f = W / 2 = 2.45 N
+Normal force per finger: N = F_f / μ_s = 2.45 / 0.6 = 4.08 N
+```
+
+**Safety factor**: Typically apply 2-3× calculated force to account for uncertainties.
+
+## Key Takeaways
+
+- Newton's laws govern all robot motion: inertia, F=ma, action-reaction
+- Forces include gravity, friction, contact, and inertial components
+- Torque = r × F causes rotational motion; τ = I × α describes angular dynamics
+- Momentum (linear and angular) is conserved in isolated systems
+- Energy conservation relates kinetic, potential, and dissipated (friction) energy
+- Robot dynamics equations (forward/inverse) map between torques and motion
+- Understanding physics enables accurate control, efficient design, and predictable behavior
+
+## What's Next?
+
+With foundational understanding of mathematics (Chapter 3) and physics (Chapter 4) complete, you're ready to explore **ROS 2**—the Robot Operating System that provides the software infrastructure for building complex robotic applications.
+
+### Further Resources
+
+- **Textbooks**: "Introduction to Robotics: Mechanics and Control" by John J. Craig
+- **Courses**: MIT OCW 2.12 Introduction to Robotics
+- **Software**: PyBullet, MuJoCo for physics simulation
+- **References**: "Modern Robotics" by Kevin Lynch and Frank Park (free online)

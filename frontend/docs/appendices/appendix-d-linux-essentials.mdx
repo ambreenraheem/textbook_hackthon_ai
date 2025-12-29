@@ -1,0 +1,94 @@
+---
+id: appendix-d-linux-essentials
+title: Appendix D - Linux Command Line Essentials
+description: Essential Linux commands and terminal skills for robotics development.
+sidebar_label: D. Linux Essentials
+sidebar_position: 4
+category: tools
+format: table
+keywords: [Linux, command line, terminal, bash, Ubuntu]
+---
+
+# Appendix D: Linux Command Line Essentials
+
+Essential Linux commands for robotics development and system management.
+
+## File System Navigation
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `pwd` | Print working directory | `pwd` |
+| `cd directory` | Change directory | `cd ~/robot_ws` |
+| `ls` | List directory contents | `ls -lah` |
+| `mkdir directory` | Create directory | `mkdir build` |
+| `rm file` | Remove file | `rm old_log.txt` |
+| `cp source dest` | Copy file | `cp config.yaml config.yaml.bak` |
+| `mv source dest` | Move/rename file | `mv old_name.txt new_name.txt` |
+
+## File Viewing and Editing
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `cat file` | Display file contents | `cat README.md` |
+| `less file` | View file with pagination | `less large_log.txt` |
+| `head -n 10 file` | Show first 10 lines | `head -n 10 data.csv` |
+| `tail -f file` | Follow file updates | `tail -f /var/log/ros.log` |
+| `nano file` | Edit with nano | `nano config.yaml` |
+| `vim file` | Edit with vim | `vim script.py` |
+
+## Process Management
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `ps aux` | List all processes | `ps aux \| grep python` |
+| `top` | Monitor system processes | `top` |
+| `htop` | Interactive process viewer | `htop` |
+| `kill PID` | Terminate process | `kill 12345` |
+| `killall process_name` | Kill all by name | `killall python3` |
+
+## System Information
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `uname -a` | System information | `uname -a` |
+| `df -h` | Disk space usage | `df -h` |
+| `free -h` | Memory usage | `free -h` |
+| `lsusb` | List USB devices | `lsusb` |
+| `dmesg` | Kernel messages | `dmesg \| tail` |
+
+## Networking
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `ifconfig` | Network interfaces | `ifconfig` |
+| `ping host` | Test connectivity | `ping google.com` |
+| `ssh user@host` | Remote login | `ssh robot@192.168.1.100` |
+| `scp file user@host:path` | Secure copy | `scp data.txt robot@192.168.1.100:/home/robot/` |
+
+## Package Management (Ubuntu/Debian)
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `sudo apt update` | Update package lists | `sudo apt update` |
+| `sudo apt upgrade` | Upgrade packages | `sudo apt upgrade` |
+| `sudo apt install package` | Install package | `sudo apt install ros-jazzy-desktop` |
+| `sudo apt remove package` | Remove package | `sudo apt remove old-package` |
+
+## Permissions
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `chmod +x script.sh` | Make executable | `chmod +x run_robot.sh` |
+| `chmod 755 file` | Set permissions | `chmod 755 script.py` |
+| `chown user:group file` | Change ownership | `sudo chown robot:robot data.txt` |
+
+## Text Processing
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `grep pattern file` | Search in file | `grep "ERROR" log.txt` |
+| `find path -name pattern` | Find files | `find . -name "*.py"` |
+| `sed 's/old/new/g' file` | Replace text | `sed 's/foo/bar/g' config.txt` |
+| `awk '{print $1}' file` | Extract columns | `awk '{print $1}' data.txt` |
+
+[Content to be expanded with more examples and use cases]

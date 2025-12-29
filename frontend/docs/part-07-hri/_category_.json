@@ -1,0 +1,12 @@
+{
+  "label": "Part VII: HRI",
+  "position": 7,
+  "collapsible": true,
+  "collapsed": true,
+  "link": {
+    "type": "generated-index",
+    "title": "Part VII: Human-Robot Interaction",
+    "description": "Understand HRI fundamentals, interaction modalities, and teleoperation systems for effective human-robot collaboration.",
+    "slug": "/part-07-hri"
+  }
+}

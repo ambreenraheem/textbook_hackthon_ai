@@ -1,0 +1,421 @@
+---
+id: ch23-interaction-modalities
+title: Chapter 23 - Interaction Modalities
+description: Explore voice, gesture, touch, and multimodal interaction techniques.
+sidebar_label: Ch 23. Interaction Modalities
+sidebar_position: 2
+keywords: [voice interaction, gesture recognition, touch, multimodal interaction]
+difficulty: intermediate
+estimatedReadingTime: 30
+---
+
+# Chapter 23: Interaction Modalities
+
+## Learning Objectives
+
+By the end of this chapter, you will be able to:
+- Implement voice-based interaction
+- Recognize and interpret gestures
+- Design touch and haptic interfaces
+- Combine multiple interaction modalities
+
+## Introduction
+
+Interaction modalities are the channels through which humans and robots communicate. Natural HRI leverages multiple modalities—voice, gesture, touch, and visual displays—often simultaneously. This chapter explores implementing and combining these modalities for rich, intuitive human-robot communication.
+
+## Voice Interaction
+
+### Speech Recognition
+
+**Pipeline**: Audio → Feature Extraction → Acoustic Model → Language Model → Text
+
+**Implementation with ROS**:
+```python
+import rospy
+from speech_recognition_msgs.msg import SpeechRecognitionCandidates
+
+class VoiceCommandHandler:
+    def __init__(self):
+        rospy.init_node('voice_command_handler')
+        rospy.Subscriber('/speech_recognition/final_result',
+                        SpeechRecognitionCandidates,
+                        self.speech_callback)
+        self.command_map = {
+            'come here': self.navigate_to_user,
+            'pick up': self.grasp_object,
+            'stop': self.emergency_stop
+        }
+
+    def speech_callback(self, msg):
+        if msg.transcript:
+            command = msg.transcript[0].lower()
+            self.execute_command(command)
+
+    def execute_command(self, command):
+        for keyword, action in self.command_map.items():
+            if keyword in command:
+                action()
+                return
+        self.speak("I didn't understand that command.")
+```
+
+### Natural Language Understanding
+
+**Intent Recognition**:
+```python
+from transformers import pipeline
+
+class IntentClassifier:
+    def __init__(self):
+        self.classifier = pipeline("zero-shot-classification",
+                                  model="facebook/bart-large-mnli")
+        self.intents = ["navigation", "manipulation", "information", "social"]
+
+    def classify(self, utterance):
+        result = self.classifier(utterance, self.intents)
+        intent = result['labels'][0]
+        confidence = result['scores'][0]
+        return intent, confidence
+
+# Usage
+classifier = IntentClassifier()
+intent, conf = classifier.classify("Can you bring me the cup from the kitchen?")
+# Returns: ("manipulation", 0.85)
+```
+
+### Text-to-Speech (TTS)
+
+**Expressive TTS**:
+```python
+from gtts import gTTS
+import pyttsx3
+
+class RobotVoice:
+    def __init__(self, engine='pyttsx3'):
+        if engine == 'pyttsx3':
+            self.engine = pyttsx3.init()
+            self.engine.setProperty('rate', 150)  # Speed
+            self.engine.setProperty('volume', 0.9)
+
+    def speak(self, text, emotion='neutral'):
+        # Adjust prosody based on emotion
+        if emotion == 'happy':
+            self.engine.setProperty('rate', 170)
+        elif emotion == 'sad':
+            self.engine.setProperty('rate', 130)
+
+        self.engine.say(text)
+        self.engine.runAndWait()
+```
+
+## Gesture Recognition
+
+### Hand Gesture Detection
+
+**Using MediaPipe**:
+```python
+import mediapipe as mp
+import cv2
+
+class GestureRecognizer:
+    def __init__(self):
+        self.mp_hands = mp.solutions.hands
+        self.hands = self.mp_hands.Hands(
+            static_image_mode=False,
+            max_num_hands=2,
+            min_detection_confidence=0.7
+        )
+
+    def recognize_gesture(self, image):
+        """Detect hand gestures from camera image."""
+        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        results = self.hands.process(image_rgb)
+
+        if results.multi_hand_landmarks:
+            for hand_landmarks in results.multi_hand_landmarks:
+                gesture = self.classify_hand_pose(hand_landmarks)
+                return gesture
+        return None
+
+    def classify_hand_pose(self, landmarks):
+        """Classify gesture from landmark positions."""
+        # Extract key points
+        thumb_tip = landmarks.landmark[4]
+        index_tip = landmarks.landmark[8]
+        middle_tip = landmarks.landmark[12]
+
+        # Simple gesture classification
+        if self.fingers_extended(landmarks, [8, 12, 16, 20]):
+            return "open_palm"
+        elif self.finger_extended(landmarks, 8) and not self.fingers_extended(landmarks, [12, 16, 20]):
+            return "pointing"
+        elif self.fingers_curled(landmarks):
+            return "fist"
+        else:
+            return "unknown"
+
+    def fingers_extended(self, landmarks, finger_tips):
+        """Check if specified fingers are extended."""
+        for tip_id in finger_tips:
+            tip = landmarks.landmark[tip_id]
+            base = landmarks.landmark[tip_id - 2]
+            if tip.y >= base.y:  # Finger not extended
+                return False
+        return True
+```
+
+### Body Pose Estimation
+
+**Detect pointing direction**:
+```python
+import mediapipe as mp
+
+class PoseGestureRecognizer:
+    def __init__(self):
+        self.mp_pose = mp.solutions.pose
+        self.pose = self.mp_pose.Pose()
+
+    def detect_pointing(self, image):
+        """Detect if person is pointing and compute direction."""
+        results = self.pose.process(image)
+
+        if results.pose_landmarks:
+            shoulder = results.pose_landmarks.landmark[self.mp_pose.PoseLandmark.RIGHT_SHOULDER]
+            wrist = results.pose_landmarks.landmark[self.mp_pose.PoseLandmark.RIGHT_WRIST]
+            elbow = results.pose_landmarks.landmark[self.mp_pose.PoseLandmark.RIGHT_ELBOW]
+
+            # Check if arm is extended
+            arm_extension = self.compute_extension(shoulder, elbow, wrist)
+            if arm_extension > 0.8:  # Arm mostly straight
+                pointing_vector = [wrist.x - shoulder.x, wrist.y - shoulder.y]
+                return True, pointing_vector
+
+        return False, None
+```
+
+## Touch and Haptic Feedback
+
+### Capacitive Touch Sensing
+
+**Robot skin with touch sensors**:
+```python
+class TouchSensor:
+    def __init__(self, i2c_address=0x5A):
+        self.address = i2c_address
+        self.touch_threshold = 50
+
+    def read_touch(self):
+        """Read touch sensor values."""
+        # Read from I2C touch sensor
+        values = self.i2c_read(self.address, num_bytes=12)
+        touched_regions = []
+
+        for i, val in enumerate(values):
+            if val > self.touch_threshold:
+                touched_regions.append(i)
+
+        return touched_regions
+
+class RobotWithTouch:
+    def __init__(self):
+        self.touch_sensor = TouchSensor()
+
+    def handle_touch(self):
+        """React to touch input."""
+        touched = self.touch_sensor.read_touch()
+
+        if 0 in touched:  # Head touched
+            self.speak("That feels nice!")
+            self.play_happy_animation()
+        elif 5 in touched:  # Arm touched
+            self.look_at_arm()
+            self.speak("You touched my arm.")
+```
+
+### Haptic Feedback
+
+**Vibration motors for feedback**:
+```python
+import RPi.GPIO as GPIO
+
+class HapticFeedback:
+    def __init__(self, motor_pin=18):
+        GPIO.setmode(GPIO.BCM)
+        GPIO.setup(motor_pin, GPIO.OUT)
+        self.pwm = GPIO.PWM(motor_pin, 1000)  # 1kHz
+
+    def vibrate(self, intensity=50, duration=0.2):
+        """Provide haptic feedback."""
+        self.pwm.start(intensity)  # 0-100% duty cycle
+        time.sleep(duration)
+        self.pwm.stop()
+
+    def pulse_pattern(self, pattern):
+        """Custom vibration pattern."""
+        for intensity, duration in pattern:
+            self.vibrate(intensity, duration)
+            time.sleep(0.1)
+
+# Usage
+haptic = HapticFeedback()
+haptic.pulse_pattern([(30, 0.1), (50, 0.1), (70, 0.2)])  # Escalating pulse
+```
+
+## Augmented Reality (AR) Interfaces
+
+### AR Visualization for Robot Intent
+
+**Projecting robot's planned path**:
+```python
+import cv2
+import numpy as np
+
+class ARInterface:
+    def __init__(self, camera, projector):
+        self.camera = camera
+        self.projector = projector
+
+    def project_planned_path(self, robot_plan):
+        """Project robot's intended path onto floor."""
+        # Get camera image
+        image = self.camera.capture()
+
+        # Compute projection of path onto floor plane
+        path_2d = self.project_to_floor(robot_plan.waypoints)
+
+        # Draw path
+        overlay = self.draw_path_overlay(image, path_2d)
+
+        # Project augmented image
+        self.projector.display(overlay)
+
+    def draw_path_overlay(self, image, path):
+        """Draw path arrows on image."""
+        overlay = image.copy()
+        for i in range(len(path) - 1):
+            cv2.arrowedLine(overlay, path[i], path[i+1],
+                          color=(0, 255, 0), thickness=3)
+        return overlay
+```
+
+## Multimodal Fusion
+
+### Combining Voice and Gesture
+
+**Example**: "Pick up that object" + pointing gesture
+
+```python
+class MultimodalInteraction:
+    def __init__(self, voice_rec, gesture_rec, vision):
+        self.voice = voice_rec
+        self.gesture = gesture_rec
+        self.vision = vision
+
+    def process_multimodal_command(self):
+        """Fuse voice and gesture inputs."""
+        # Listen for voice command
+        utterance = self.voice.listen()
+
+        if "that" in utterance or "this" in utterance:
+            # Deictic reference, need gesture
+            gesture_data = self.gesture.get_current_gesture()
+
+            if gesture_data and gesture_data.type == "pointing":
+                # Compute pointed-at object
+                pointing_ray = self.compute_pointing_ray(gesture_data)
+                target_object = self.vision.raycast_to_object(pointing_ray)
+
+                # Resolve reference
+                command = utterance.replace("that", target_object.name)
+                return self.execute_command(command)
+
+        # No deictic reference, process voice alone
+        return self.execute_command(utterance)
+
+    def compute_pointing_ray(self, gesture_data):
+        """Compute 3D ray from pointing gesture."""
+        shoulder_pos = gesture_data.shoulder_3d
+        hand_pos = gesture_data.hand_3d
+        direction = (hand_pos - shoulder_pos).normalize()
+        return Ray(origin=shoulder_pos, direction=direction)
+```
+
+### Confidence-Based Modality Selection
+
+**Choose most reliable modality**:
+```python
+class ModalityFusion:
+    def __init__(self):
+        self.modality_weights = {
+            'voice': 0.7,
+            'gesture': 0.8,
+            'gaze': 0.6
+        }
+
+    def fuse_inputs(self, voice_result, gesture_result, gaze_result):
+        """Combine inputs with confidence weighting."""
+        candidates = []
+
+        if voice_result:
+            candidates.append(('voice', voice_result.intent, voice_result.confidence))
+        if gesture_result:
+            candidates.append(('gesture', gesture_result.intent, gesture_result.confidence))
+        if gaze_result:
+            candidates.append(('gaze', gaze_result.target, gaze_result.confidence))
+
+        # Weight by modality reliability
+        weighted_scores = []
+        for modality, intent, conf in candidates:
+            score = conf * self.modality_weights[modality]
+            weighted_scores.append((intent, score))
+
+        # Select highest confidence
+        best_intent = max(weighted_scores, key=lambda x: x[1])[0]
+        return best_intent
+```
+
+## Interaction Design Principles
+
+### Redundancy and Disambiguation
+
+Provide multiple ways to achieve same goal:
+- "Turn on the lights" (voice)
+- Point at light switch (gesture)
+- Tap light icon on screen (touch)
+
+### Graceful Degradation
+
+If one modality fails, fall back to others:
+```python
+def request_user_input(modalities=['voice', 'gesture', 'touch']):
+    for modality in modalities:
+        try:
+            result = get_input(modality)
+            if result:
+                return result
+        except Exception as e:
+            log(f"{modality} failed: {e}")
+            continue
+    return ask_for_explicit_input()  # Final fallback
+```
+
+## Key Takeaways
+
+- Voice interaction enables natural language commands and conversation
+- Gesture recognition interprets hand and body poses for non-verbal communication
+- Touch and haptic feedback provide physical interaction channels
+- AR visualizes robot intentions and provides spatial information
+- Multimodal fusion combines modalities for robust, natural interaction
+- Redundancy across modalities increases reliability
+- Context determines optimal modality selection
+
+## What's Next?
+
+Chapter 24 covers **Teleoperation**, enabling remote control of humanoid robots through immersive interfaces, haptic feedback, and shared autonomy.
+
+### Further Resources
+
+- **Libraries**: MediaPipe (gesture), SpeechRecognition (Python), pyttsx3 (TTS)
+- **Frameworks**: ROS audio_common, MoveIt for AR visualization
+- **Papers**: "Multimodal Human-Robot Interaction" surveys
+- **Datasets**: EGGNOG (gesture), Google Speech Commands

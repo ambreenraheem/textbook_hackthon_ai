@@ -1,0 +1,12 @@
+{
+  "label": "Part I: Foundations",
+  "position": 1,
+  "collapsible": true,
+  "collapsed": false,
+  "link": {
+    "type": "generated-index",
+    "title": "Part I: Foundations of Physical AI & Robotics",
+    "description": "Build your foundational understanding of Physical AI, humanoid robotics, mathematical principles, and physics fundamentals.",
+    "slug": "/part-01-foundations"
+  }
+}

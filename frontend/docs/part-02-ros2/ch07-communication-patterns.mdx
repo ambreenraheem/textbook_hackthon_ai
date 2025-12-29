@@ -1,0 +1,1163 @@
+---
+id: ch07-communication-patterns
+title: Chapter 7 - ROS 2 Communication Patterns
+description: Learn publisher-subscriber, client-server, and action patterns for robot communication.
+sidebar_label: Ch 7. Communication Patterns
+sidebar_position: 3
+keywords: [pub-sub, request-response, actions, message passing, DDS]
+difficulty: intermediate
+estimatedReadingTime: 25
+---
+
+# Chapter 7: ROS 2 Communication Patterns
+
+## Learning Objectives
+
+By the end of this chapter, you will be able to:
+- Implement publisher-subscriber patterns
+- Create service clients and servers
+- Use action servers for long-running tasks
+- Choose appropriate communication patterns for different scenarios
+
+## Introduction
+
+Effective communication is the backbone of any robotic system. In ROS 2, nodes communicate through three primary patterns: publish-subscribe (topics), request-response (services), and goal-based (actions). Understanding when and how to use each pattern is crucial for building efficient, responsive robotic systems.
+
+This chapter builds on the core concepts from Chapter 6, diving deeper into the mechanics of each communication pattern. We'll explore Quality of Service (QoS) policies in detail, learn how to create custom messages, understand the Data Distribution Service (DDS) middleware that powers ROS 2, and examine real-world multi-node architectures.
+
+By the end of this chapter, you'll be able to design communication architectures that are robust, efficient, and tailored to your specific robotics application.
+
+:::info What You'll Learn
+This chapter covers advanced communication concepts including:
+- Detailed publisher-subscriber patterns with custom messages
+- Service communication for synchronous operations
+- Action patterns for complex, long-running tasks
+- Quality of Service (QoS) policies and DDS concepts
+- Best practices for choosing communication patterns
+:::
+
+## Publisher-Subscriber Pattern Deep Dive
+
+### The Pub-Sub Philosophy
+
+The publisher-subscriber pattern decouples data producers from data consumers. Publishers don't know who (if anyone) is listening, and subscribers don't know who is publishing. This loose coupling provides several advantages:
+
+1. **Modularity**: Nodes can be developed and tested independently
+2. **Scalability**: Easy to add new publishers or subscribers
+3. **Flexibility**: Dynamic reconfiguration at runtime
+4. **Performance**: Asynchronous, non-blocking communication
+
+### Message Flow Architecture
+
+When a publisher sends a message:
+
+1. Message is serialized using DDS middleware
+2. DDS determines which subscribers should receive it based on QoS
+3. Message is transmitted over the network (or shared memory for local nodes)
+4. Subscribers' callbacks are invoked with the message
+
+```python
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import LaserScan
+import numpy as np
+
+class LaserPublisher(Node):
+    """
+    Simulates a LIDAR sensor publishing laser scan data.
+    Demonstrates realistic sensor data publishing pattern.
+    """
+    def __init__(self):
+        super().__init__('laser_publisher')
+
+        # Create publisher with appropriate QoS for sensor data
+        self.publisher_ = self.create_publisher(LaserScan, 'scan', 10)
+
+        # Publish at sensor frequency (10 Hz for LIDAR)
+        self.timer = self.create_timer(0.1, self.publish_scan)
+
+        # Sensor parameters
+        self.angle_min = -np.pi
+        self.angle_max = np.pi
+        self.num_readings = 360
+
+        self.get_logger().info('Laser publisher started')
+
+    def publish_scan(self):
+        msg = LaserScan()
+
+        # Header with timestamp and frame
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = 'laser_frame'
+
+        # Scan parameters
+        msg.angle_min = self.angle_min
+        msg.angle_max = self.angle_max
+        msg.angle_increment = (self.angle_max - self.angle_min) / self.num_readings
+        msg.time_increment = 0.0
+        msg.scan_time = 0.1
+        msg.range_min = 0.1
+        msg.range_max = 10.0
+
+        # Simulated range data (in real system, this comes from hardware)
+        msg.ranges = [2.0 + 0.5 * np.sin(i * msg.angle_increment)
+                      for i in range(self.num_readings)]
+        msg.intensities = [100.0] * self.num_readings
+
+        self.publisher_.publish(msg)
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = LaserPublisher()
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
+```
+
+### Advanced Subscriber Patterns
+
+Here's a subscriber that processes laser scan data to detect obstacles:
+
+```python
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import LaserScan
+from std_msgs.msg import Bool
+import numpy as np
+
+class ObstacleDetector(Node):
+    """
+    Subscribes to laser scan data and detects nearby obstacles.
+    Publishes obstacle detection status.
+    """
+    def __init__(self):
+        super().__init__('obstacle_detector')
+
+        # Parameters for obstacle detection
+        self.declare_parameter('detection_threshold', 0.5)  # meters
+        self.declare_parameter('detection_angle', 45.0)  # degrees
+
+        self.threshold = self.get_parameter('detection_threshold').value
+        self.angle = np.deg2rad(self.get_parameter('detection_angle').value)
+
+        # Subscribe to laser scan
+        self.subscription = self.create_subscription(
+            LaserScan,
+            'scan',
+            self.scan_callback,
+            10)
+
+        # Publish obstacle detection status
+        self.obstacle_pub = self.create_publisher(Bool, 'obstacle_detected', 10)
+
+        self.get_logger().info(
+            f'Obstacle detector started (threshold: {self.threshold}m, '
+            f'angle: {np.rad2deg(self.angle)}°)')
+
+    def scan_callback(self, msg):
+        """Process laser scan and detect obstacles in front."""
+        # Calculate indices for forward-facing detection cone
+        total_readings = len(msg.ranges)
+        center_idx = total_readings // 2
+
+        # Convert angle to index range
+        angle_range = int((self.angle / (msg.angle_max - msg.angle_min)) * total_readings)
+
+        start_idx = max(0, center_idx - angle_range // 2)
+        end_idx = min(total_readings, center_idx + angle_range // 2)
+
+        # Check for obstacles in detection cone
+        forward_ranges = msg.ranges[start_idx:end_idx]
+
+        # Filter out invalid readings
+        valid_ranges = [r for r in forward_ranges
+                       if msg.range_min <= r <= msg.range_max]
+
+        if valid_ranges:
+            min_distance = min(valid_ranges)
+
+            if min_distance < self.threshold:
+                self.get_logger().warn(
+                    f'Obstacle detected at {min_distance:.2f}m!',
+                    throttle_duration_sec=1.0)  # Throttle warnings
+
+                obstacle_msg = Bool()
+                obstacle_msg.data = True
+                self.obstacle_pub.publish(obstacle_msg)
+            else:
+                obstacle_msg = Bool()
+                obstacle_msg.data = False
+                self.obstacle_pub.publish(obstacle_msg)
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = ObstacleDetector()
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
+```
+
+:::tip Callback Performance
+Keep subscriber callbacks fast (< 10ms). For heavy processing, use a separate thread or processing queue to avoid blocking the executor.
+:::
+
+### Custom Messages
+
+For domain-specific data, create custom messages:
+
+1. Create message definition file `RobotStatus.msg`:
+
+```
+# RobotStatus.msg - Custom message for robot state
+
+Header header
+
+# Battery information
+float32 battery_voltage
+float32 battery_percentage
+
+# Motor status
+bool motors_enabled
+float32[] motor_temperatures  # One per motor
+
+# System status
+string status_message
+uint8 ERROR_NONE = 0
+uint8 ERROR_BATTERY_LOW = 1
+uint8 ERROR_MOTOR_OVERHEAT = 2
+uint8 ERROR_COMMUNICATION = 3
+uint8 error_code
+```
+
+2. Update `CMakeLists.txt`:
+
+```cmake
+find_package(rosidl_default_generators REQUIRED)
+
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/RobotStatus.msg"
+  DEPENDENCIES std_msgs
+)
+```
+
+3. Update `package.xml`:
+
+```xml
+<build_depend>rosidl_default_generators</build_depend>
+<exec_depend>rosidl_default_runtime</exec_depend>
+<member_of_group>rosidl_interface_packages</member_of_group>
+```
+
+4. Use in Python:
+
+```python
+from my_robot_msgs.msg import RobotStatus
+
+class RobotStatusPublisher(Node):
+    def __init__(self):
+        super().__init__('status_publisher')
+        self.publisher_ = self.create_publisher(RobotStatus, 'robot_status', 10)
+        self.timer = self.create_timer(1.0, self.publish_status)
+
+    def publish_status(self):
+        msg = RobotStatus()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = 'base_link'
+
+        msg.battery_voltage = 24.5
+        msg.battery_percentage = 85.0
+        msg.motors_enabled = True
+        msg.motor_temperatures = [45.2, 43.8, 46.1, 44.5]
+        msg.status_message = 'Operating normally'
+        msg.error_code = RobotStatus.ERROR_NONE
+
+        self.publisher_.publish(msg)
+```
+
+## Quality of Service (QoS) Policies
+
+### Understanding QoS
+
+QoS policies define how messages are delivered between publishers and subscribers. They control reliability, durability, history, and more.
+
+### Key QoS Policies
+
+#### 1. Reliability
+
+- **RELIABLE**: Guaranteed delivery (acknowledgments, retransmissions)
+- **BEST_EFFORT**: No guarantees (faster, less overhead)
+
+```python
+from rclpy.qos import QoSProfile, ReliabilityPolicy
+
+# For critical commands - must arrive
+reliable_qos = QoSProfile(
+    reliability=ReliabilityPolicy.RELIABLE,
+    depth=10
+)
+
+# For high-frequency sensor data - occasional loss acceptable
+best_effort_qos = QoSProfile(
+    reliability=ReliabilityPolicy.BEST_EFFORT,
+    depth=10
+)
+```
+
+#### 2. Durability
+
+- **TRANSIENT_LOCAL**: Late-joining subscribers get last published message
+- **VOLATILE**: Only receive messages published after subscription
+
+```python
+from rclpy.qos import DurabilityPolicy
+
+# Keep last message for late subscribers
+transient_qos = QoSProfile(
+    durability=DurabilityPolicy.TRANSIENT_LOCAL,
+    depth=1
+)
+```
+
+#### 3. History
+
+- **KEEP_LAST**: Keep last N messages
+- **KEEP_ALL**: Keep all messages (until resource limits)
+
+```python
+from rclpy.qos import HistoryPolicy
+
+qos = QoSProfile(
+    history=HistoryPolicy.KEEP_LAST,
+    depth=10  # Keep last 10 messages
+)
+```
+
+#### 4. Lifespan
+
+How long messages are considered valid:
+
+```python
+from rclpy.duration import Duration
+
+qos = QoSProfile(
+    lifespan=Duration(seconds=1)  # Messages expire after 1 second
+)
+```
+
+#### 5. Deadline
+
+Expected maximum time between messages:
+
+```python
+qos = QoSProfile(
+    deadline=Duration(seconds=0.1)  # Expect message every 100ms
+)
+```
+
+### QoS Presets
+
+ROS 2 provides preset QoS profiles for common scenarios:
+
+```python
+from rclpy.qos import qos_profile_sensor_data, qos_profile_system_default
+
+# For sensor data (best effort, volatile)
+self.sensor_pub = self.create_publisher(
+    LaserScan, 'scan', qos_profile_sensor_data)
+
+# For commands (reliable, volatile)
+self.cmd_pub = self.create_publisher(
+    Twist, 'cmd_vel', qos_profile_system_default)
+```
+
+### QoS Compatibility
+
+Publishers and subscribers must have compatible QoS settings:
+
+| Policy | Compatible Combinations |
+|--------|------------------------|
+| Reliability | Reliable pub ↔ any sub; Best-effort pub ↔ best-effort sub only |
+| Durability | Transient pub ↔ any sub; Volatile pub ↔ volatile sub only |
+| Deadline | Subscriber deadline ≥ publisher deadline |
+| Lifespan | Any combination |
+
+:::warning Common QoS Issue
+If you can't see messages, check QoS compatibility with:
+```bash
+ros2 topic info /topic_name -v
+```
+:::
+
+### Practical QoS Example
+
+```python
+from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
+
+class SmartPublisher(Node):
+    def __init__(self):
+        super().__init__('smart_publisher')
+
+        # High-frequency sensor data - best effort
+        sensor_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=5
+        )
+        self.sensor_pub = self.create_publisher(
+            LaserScan, 'scan', sensor_qos)
+
+        # Critical commands - reliable
+        command_qos = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.VOLATILE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=10
+        )
+        self.cmd_pub = self.create_publisher(
+            Twist, 'cmd_vel', command_qos)
+
+        # Configuration - transient local for late joiners
+        config_qos = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1
+        )
+        self.config_pub = self.create_publisher(
+            RobotStatus, 'config', config_qos)
+```
+
+## Client-Server Pattern (Services)
+
+### When to Use Services
+
+Services are ideal for:
+- Triggering discrete actions (start/stop, calibrate, reset)
+- Querying information (get status, check condition)
+- Configuration changes
+- Operations that complete quickly (< 1 second)
+
+### Service Design Patterns
+
+#### 1. Trigger Service
+
+Simple trigger with status response:
+
+```python
+# srv/Trigger.srv (from std_srvs)
+---
+bool success
+string message
+```
+
+```python
+from std_srvs.srv import Trigger
+
+class CalibrateService(Node):
+    def __init__(self):
+        super().__init__('calibrate_service')
+
+        self.srv = self.create_service(
+            Trigger,
+            'calibrate_sensors',
+            self.calibrate_callback)
+
+        self.is_calibrated = False
+
+    def calibrate_callback(self, request, response):
+        self.get_logger().info('Calibration requested')
+
+        try:
+            # Perform calibration
+            self.perform_calibration()
+
+            self.is_calibrated = True
+            response.success = True
+            response.message = 'Calibration completed successfully'
+
+        except Exception as e:
+            response.success = False
+            response.message = f'Calibration failed: {str(e)}'
+
+        return response
+
+    def perform_calibration(self):
+        # Actual calibration logic
+        import time
+        time.sleep(2)  # Simulate calibration
+```
+
+#### 2. Query Service
+
+Request information about system state:
+
+```python
+# srv/GetBatteryLevel.srv
+---
+float32 voltage
+float32 percentage
+string status
+```
+
+```python
+from my_robot_srvs.srv import GetBatteryLevel
+
+class BatteryService(Node):
+    def __init__(self):
+        super().__init__('battery_service')
+
+        self.srv = self.create_service(
+            GetBatteryLevel,
+            'get_battery_level',
+            self.battery_callback)
+
+        self.voltage = 24.5
+
+    def battery_callback(self, request, response):
+        response.voltage = self.voltage
+        response.percentage = (self.voltage - 20.0) / 5.0 * 100.0
+
+        if response.percentage > 50:
+            response.status = 'Good'
+        elif response.percentage > 20:
+            response.status = 'Low'
+        else:
+            response.status = 'Critical'
+
+        return response
+```
+
+#### 3. Configuration Service
+
+Set parameters or configuration:
+
+```python
+# srv/SetSpeed.srv
+float32 max_linear_speed
+float32 max_angular_speed
+---
+bool success
+string message
+```
+
+### Asynchronous Service Clients
+
+For non-blocking service calls:
+
+```python
+import rclpy
+from rclpy.node import Node
+from std_srvs.srv import Trigger
+
+class AsyncServiceClient(Node):
+    def __init__(self):
+        super().__init__('async_client')
+
+        self.client = self.create_client(Trigger, 'calibrate_sensors')
+
+        # Wait for service
+        while not self.client.wait_for_service(timeout_sec=1.0):
+            self.get_logger().info('Waiting for calibration service...')
+
+        self.get_logger().info('Service available, sending request')
+        self.send_request()
+
+    def send_request(self):
+        request = Trigger.Request()
+
+        # Send asynchronously
+        future = self.client.call_async(request)
+        future.add_done_callback(self.response_callback)
+
+    def response_callback(self, future):
+        try:
+            response = future.result()
+            if response.success:
+                self.get_logger().info(f'Success: {response.message}')
+            else:
+                self.get_logger().error(f'Failed: {response.message}')
+        except Exception as e:
+            self.get_logger().error(f'Service call failed: {e}')
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = AsyncServiceClient()
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
+```
+
+## Action Pattern for Long-Running Tasks
+
+### Action Architecture
+
+Actions consist of three communication channels:
+1. **Goal** (client → server): What to accomplish
+2. **Feedback** (server → client): Progress updates
+3. **Result** (server → client): Final outcome
+
+Additionally, goals can be:
+- **Accepted** or **Rejected** by the server
+- **Cancelled** by the client
+- **Succeeded**, **Aborted**, or **Cancelled** as final states
+
+### Custom Action Definition
+
+```
+# action/Navigate.action
+
+# Goal: Where to navigate
+geometry_msgs/PoseStamped target_pose
+---
+# Result: Final position and status
+geometry_msgs/PoseStamped final_pose
+float32 distance_traveled
+string completion_message
+---
+# Feedback: Current progress
+geometry_msgs/PoseStamped current_pose
+float32 distance_remaining
+float32 estimated_time_remaining
+```
+
+### Complete Action Server Example
+
+```python
+import rclpy
+from rclpy.action import ActionServer, CancelResponse, GoalResponse
+from rclpy.node import Node
+from my_robot_actions.action import Navigate
+from geometry_msgs.msg import PoseStamped
+import time
+import math
+
+class NavigationActionServer(Node):
+    def __init__(self):
+        super().__init__('navigation_action_server')
+
+        self._action_server = ActionServer(
+            self,
+            Navigate,
+            'navigate_to_pose',
+            execute_callback=self.execute_callback,
+            goal_callback=self.goal_callback,
+            cancel_callback=self.cancel_callback)
+
+        self.current_pose = PoseStamped()
+        self.get_logger().info('Navigation action server started')
+
+    def goal_callback(self, goal_request):
+        """Accept or reject goal based on validity."""
+        self.get_logger().info('Received navigation goal')
+
+        # Validate goal (e.g., check if target is reachable)
+        if self.is_valid_goal(goal_request):
+            return GoalResponse.ACCEPT
+        else:
+            self.get_logger().warn('Goal rejected: invalid target')
+            return GoalResponse.REJECT
+
+    def cancel_callback(self, goal_handle):
+        """Handle cancellation requests."""
+        self.get_logger().info('Cancellation requested')
+        return CancelResponse.ACCEPT
+
+    def is_valid_goal(self, goal_request):
+        """Validate navigation goal."""
+        # Check if coordinates are within bounds
+        x = goal_request.target_pose.pose.position.x
+        y = goal_request.target_pose.pose.position.y
+
+        return -10.0 <= x <= 10.0 and -10.0 <= y <= 10.0
+
+    def execute_callback(self, goal_handle):
+        """Execute navigation to goal."""
+        self.get_logger().info('Executing navigation goal')
+
+        target = goal_handle.request.target_pose
+        feedback_msg = Navigate.Feedback()
+
+        # Simulate navigation with feedback
+        start_time = time.time()
+        total_distance = self.calculate_distance(self.current_pose, target)
+
+        for i in range(100):
+            # Check if goal was cancelled
+            if goal_handle.is_cancel_requested:
+                goal_handle.canceled()
+                self.get_logger().info('Goal cancelled')
+
+                result = Navigate.Result()
+                result.final_pose = self.current_pose
+                result.completion_message = 'Navigation cancelled'
+                return result
+
+            # Simulate movement
+            progress = i / 100.0
+            self.current_pose = self.interpolate_pose(
+                self.current_pose, target, progress)
+
+            # Publish feedback
+            feedback_msg.current_pose = self.current_pose
+            feedback_msg.distance_remaining = total_distance * (1.0 - progress)
+            feedback_msg.estimated_time_remaining = (time.time() - start_time) / progress * (1.0 - progress) if progress > 0 else 0
+
+            goal_handle.publish_feedback(feedback_msg)
+            time.sleep(0.1)
+
+        # Goal succeeded
+        goal_handle.succeed()
+
+        result = Navigate.Result()
+        result.final_pose = self.current_pose
+        result.distance_traveled = total_distance
+        result.completion_message = 'Navigation completed successfully'
+
+        self.get_logger().info('Navigation goal succeeded')
+        return result
+
+    def calculate_distance(self, pose1, pose2):
+        """Calculate Euclidean distance between poses."""
+        dx = pose2.pose.position.x - pose1.pose.position.x
+        dy = pose2.pose.position.y - pose1.pose.position.y
+        return math.sqrt(dx*dx + dy*dy)
+
+    def interpolate_pose(self, start, end, t):
+        """Interpolate between two poses."""
+        result = PoseStamped()
+        result.pose.position.x = start.pose.position.x + t * (end.pose.position.x - start.pose.position.x)
+        result.pose.position.y = start.pose.position.y + t * (end.pose.position.y - start.pose.position.y)
+        return result
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = NavigationActionServer()
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
+```
+
+### Action Client with Feedback
+
+```python
+import rclpy
+from rclpy.action import ActionClient
+from rclpy.node import Node
+from my_robot_actions.action import Navigate
+from geometry_msgs.msg import PoseStamped
+
+class NavigationClient(Node):
+    def __init__(self):
+        super().__init__('navigation_client')
+
+        self._action_client = ActionClient(
+            self, Navigate, 'navigate_to_pose')
+
+    def send_goal(self, x, y):
+        goal_msg = Navigate.Goal()
+        goal_msg.target_pose = PoseStamped()
+        goal_msg.target_pose.pose.position.x = x
+        goal_msg.target_pose.pose.position.y = y
+
+        self._action_client.wait_for_server()
+
+        self.get_logger().info(f'Sending goal: ({x}, {y})')
+
+        self._send_goal_future = self._action_client.send_goal_async(
+            goal_msg,
+            feedback_callback=self.feedback_callback)
+
+        self._send_goal_future.add_done_callback(self.goal_response_callback)
+
+    def feedback_callback(self, feedback_msg):
+        feedback = feedback_msg.feedback
+        self.get_logger().info(
+            f'Distance remaining: {feedback.distance_remaining:.2f}m, '
+            f'ETA: {feedback.estimated_time_remaining:.1f}s')
+
+    def goal_response_callback(self, future):
+        goal_handle = future.result()
+
+        if not goal_handle.accepted:
+            self.get_logger().error('Goal rejected by server')
+            return
+
+        self.get_logger().info('Goal accepted, waiting for result...')
+
+        self._get_result_future = goal_handle.get_result_async()
+        self._get_result_future.add_done_callback(self.get_result_callback)
+
+    def get_result_callback(self, future):
+        result = future.result().result
+        status = future.result().status
+
+        if status == 4:  # SUCCEEDED
+            self.get_logger().info(
+                f'Navigation succeeded! Traveled {result.distance_traveled:.2f}m. '
+                f'{result.completion_message}')
+        elif status == 5:  # CANCELED
+            self.get_logger().warn('Navigation was cancelled')
+        else:
+            self.get_logger().error('Navigation failed')
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = NavigationClient()
+    node.send_goal(5.0, 3.0)
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
+```
+
+:::tip Action vs Service
+Use actions when:
+- Task takes > 1 second
+- You need progress feedback
+- Task can be cancelled mid-execution
+- Examples: navigation, grasping, trajectory execution
+:::
+
+## Data Distribution Service (DDS)
+
+### What is DDS?
+
+DDS (Data Distribution Service) is the middleware layer that ROS 2 uses for communication. It provides:
+
+- **Discovery**: Automatic detection of publishers/subscribers
+- **Serialization**: Converting messages to network format
+- **Transport**: Reliable message delivery
+- **QoS**: Quality of Service policies
+
+### DDS Implementations
+
+ROS 2 supports multiple DDS implementations:
+
+- **Fast DDS** (default): eProsima's implementation
+- **Cyclone DDS**: Eclipse's implementation
+- **Connext DDS**: RTI's commercial implementation
+
+Switch between them:
+
+```bash
+# Use Cyclone DDS
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+
+# Use Fast DDS
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+```
+
+### DDS Domain
+
+DDS uses domains to isolate communication:
+
+```bash
+# Set domain ID (0-101 for localhost, 0-232 for network)
+export ROS_DOMAIN_ID=42
+```
+
+Nodes in different domains can't communicate. Use this for:
+- Running multiple robots on same network
+- Isolating development/production systems
+- Testing without interference
+
+### Discovery Mechanism
+
+DDS uses multicast for automatic discovery:
+
+1. Node starts and announces itself via multicast
+2. Other nodes receive announcement
+3. Nodes exchange endpoint information
+4. Communication begins
+
+For networks without multicast:
+
+```xml
+<!-- fastdds_profile.xml -->
+<profiles>
+    <participant profile_name="no_multicast">
+        <rtps>
+            <builtin>
+                <discovery_config>
+                    <discoveryProtocol>SIMPLE</discoveryProtocol>
+                    <simpleEDP>
+                        <PUBWRITER_SUBREADER>false</PUBWRITER_SUBREADER>
+                        <PUBREADER_SUBWRITER>false</PUBREADER_SUBWRITER>
+                    </simpleEDP>
+                </discovery_config>
+            </builtin>
+        </rtps>
+    </participant>
+</profiles>
+```
+
+## Choosing the Right Pattern
+
+### Decision Matrix
+
+| Use Case | Pattern | Reason |
+|----------|---------|--------|
+| Sensor data (IMU, camera) | Topic | Continuous stream, many subscribers |
+| Motor commands | Topic | High frequency, real-time |
+| Enable/disable feature | Service | One-time operation, needs confirmation |
+| Get current status | Service | Query operation, synchronous |
+| Navigate to position | Action | Long duration, needs feedback, cancellable |
+| Execute trajectory | Action | Long duration, monitor progress |
+| Emergency stop | Topic | Broadcast, time-critical |
+| Parameter updates | Service/Param | Configuration change |
+
+### Performance Characteristics
+
+**Topics**:
+- Latency: < 1ms (local), 1-10ms (network)
+- Throughput: Very high (limited by network/CPU)
+- Overhead: Low
+- Best for: Real-time, continuous data
+
+**Services**:
+- Latency: 1-100ms depending on processing
+- Throughput: Medium
+- Overhead: Higher (request-response round trip)
+- Best for: Infrequent operations, queries
+
+**Actions**:
+- Latency: Variable (depends on task duration)
+- Throughput: Low (not meant for high frequency)
+- Overhead: Highest (goal + feedback + result)
+- Best for: Long-running, monitored tasks
+
+## Multi-Node Architecture Example
+
+Let's build a complete mobile robot system:
+
+```python
+# Complete system with multiple communication patterns
+
+# 1. Sensor Node (Publisher)
+class SensorNode(Node):
+    def __init__(self):
+        super().__init__('sensor_node')
+
+        # Publish sensor data
+        self.imu_pub = self.create_publisher(Imu, 'imu', qos_profile_sensor_data)
+        self.laser_pub = self.create_publisher(LaserScan, 'scan', qos_profile_sensor_data)
+
+        # Service for calibration
+        self.calibrate_srv = self.create_service(
+            Trigger, 'calibrate_sensors', self.calibrate_callback)
+
+        self.timer = self.create_timer(0.01, self.publish_sensors)  # 100 Hz
+
+# 2. Planning Node (Subscriber + Action Server)
+class PlanningNode(Node):
+    def __init__(self):
+        super().__init__('planning_node')
+
+        # Subscribe to sensors
+        self.laser_sub = self.create_subscription(
+            LaserScan, 'scan', self.laser_callback, 10)
+
+        # Action server for navigation
+        self.nav_action = ActionServer(
+            self, Navigate, 'navigate', self.navigate_callback)
+
+        # Publish path plans
+        self.path_pub = self.create_publisher(Path, 'planned_path', 10)
+
+# 3. Control Node (Subscriber + Publisher)
+class ControlNode(Node):
+    def __init__(self):
+        super().__init__('control_node')
+
+        # Subscribe to planned path
+        self.path_sub = self.create_subscription(
+            Path, 'planned_path', self.path_callback, 10)
+
+        # Subscribe to current state
+        self.odom_sub = self.create_subscription(
+            Odometry, 'odom', self.odom_callback, 10)
+
+        # Publish control commands
+        self.cmd_pub = self.create_publisher(
+            Twist, 'cmd_vel', 10)
+
+        # Service for emergency stop
+        self.estop_srv = self.create_service(
+            Trigger, 'emergency_stop', self.estop_callback)
+
+        self.timer = self.create_timer(0.02, self.control_loop)  # 50 Hz
+
+# 4. Safety Monitor (Subscriber + Publisher)
+class SafetyNode(Node):
+    def __init__(self):
+        super().__init__('safety_node')
+
+        # Monitor multiple sensors
+        self.laser_sub = self.create_subscription(
+            LaserScan, 'scan', self.check_obstacles, 10)
+        self.battery_sub = self.create_subscription(
+            BatteryState, 'battery', self.check_battery, 10)
+
+        # Publish safety status
+        self.safety_pub = self.create_publisher(Bool, 'system_safe', 10)
+
+        # Emergency stop service client
+        self.estop_client = self.create_client(Trigger, 'emergency_stop')
+```
+
+## Best Practices
+
+### 1. Message Design
+
+- Keep messages focused and minimal
+- Use standard message types when possible
+- Document custom message fields
+- Consider backwards compatibility
+
+### 2. QoS Selection
+
+- Match QoS to your requirements
+- Use presets for common scenarios
+- Test QoS compatibility early
+- Document QoS choices
+
+### 3. Error Handling
+
+```python
+# Always handle service failures
+try:
+    response = self.client.call(request)
+    if not response.success:
+        self.get_logger().error(f'Service failed: {response.message}')
+except Exception as e:
+    self.get_logger().error(f'Service call exception: {e}')
+
+# Handle action cancellation
+if goal_handle.is_cancel_requested:
+    goal_handle.canceled()
+    return cleanup_result()
+
+# Validate message data
+def callback(self, msg):
+    if not self.validate_message(msg):
+        self.get_logger().warn('Received invalid message')
+        return
+    # Process message
+```
+
+### 4. Performance Optimization
+
+- Use appropriate queue depths
+- Implement throttling for high-frequency logs
+- Consider shared memory for large messages (same host)
+- Profile your communication patterns
+
+## Common Pitfalls
+
+### 1. Blocking Callbacks
+
+**Bad**:
+```python
+def callback(self, msg):
+    time.sleep(1)  # Blocks executor!
+    self.process(msg)
+```
+
+**Good**:
+```python
+def callback(self, msg):
+    # Offload to thread pool
+    self.executor.submit(self.process, msg)
+```
+
+### 2. Service Timeout
+
+**Bad**:
+```python
+response = client.call(request)  # May hang forever
+```
+
+**Good**:
+```python
+future = client.call_async(request)
+rclpy.spin_until_future_complete(node, future, timeout_sec=5.0)
+if future.done():
+    response = future.result()
+else:
+    node.get_logger().error('Service timeout')
+```
+
+### 3. Action Feedback Spam
+
+**Bad**:
+```python
+# Publishing feedback in tight loop
+for i in range(10000):
+    goal_handle.publish_feedback(feedback)  # Too much!
+```
+
+**Good**:
+```python
+# Throttle feedback
+last_feedback_time = time.time()
+for i in range(10000):
+    if time.time() - last_feedback_time > 0.1:  # 10 Hz max
+        goal_handle.publish_feedback(feedback)
+        last_feedback_time = time.time()
+```
+
+## Practice Exercises
+
+### Exercise 1: Multi-Sensor Fusion
+
+Create a system that:
+1. Subscribes to multiple sensor topics (camera, lidar, IMU)
+2. Fuses data from all sensors
+3. Publishes combined state estimate
+4. Provides service to query current state
+
+### Exercise 2: Task Coordinator
+
+Implement an action server that:
+1. Accepts complex task goals
+2. Breaks tasks into sub-tasks
+3. Calls multiple services to execute sub-tasks
+4. Provides detailed feedback on progress
+5. Handles cancellation gracefully
+
+### Exercise 3: Communication Debugger
+
+Build a node that:
+1. Monitors all topics, services, and actions
+2. Checks QoS compatibility
+3. Reports communication issues
+4. Logs message frequencies and latencies
+
+## Further Reading
+
+- [ROS 2 QoS Documentation](https://docs.ros.org/en/humble/Concepts/About-Quality-of-Service-Settings.html)
+- [DDS Specification](https://www.omg.org/spec/DDS/)
+- [Fast DDS Documentation](https://fast-dds.docs.eprosima.com/)
+- [Cyclone DDS](https://github.com/eclipse-cyclonedds/cyclonedds)
+
+## Cross-References
+
+- **Chapter 6**: ROS 2 core concepts foundation
+- **Chapter 8**: Applying communication patterns to humanoid control
+- **Chapter 9**: Launch files for multi-node systems
+- **Chapter 10**: tf2 for coordinate frame transforms
+
+## Next Steps
+
+With a solid understanding of communication patterns, you're ready to:
+
+1. Apply these patterns to humanoid robot control (Chapter 8)
+2. Design complex multi-node architectures
+3. Optimize communication for real-time performance
+4. Debug communication issues effectively
+
+In the next chapter, we'll apply everything we've learned to the specific challenges of humanoid robot control, including joint control, trajectory planning, and sensor integration.
+
+:::tip Experiment and Measure
+Don't guess at communication patterns or QoS settings. Measure actual performance with tools like `ros2 topic hz` and `ros2 topic bw`. Profile your system under realistic loads.
+:::

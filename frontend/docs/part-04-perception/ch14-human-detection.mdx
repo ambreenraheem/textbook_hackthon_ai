@@ -1,0 +1,1198 @@
+---
+id: ch14-human-detection
+title: Chapter 14 - Human Detection & Tracking
+description: Detect, track, and estimate human poses for human-robot interaction.
+sidebar_label: Ch 14. Human Detection
+sidebar_position: 3
+keywords: [human detection, pose estimation, tracking, HRI]
+difficulty: advanced
+estimatedReadingTime: 35
+---
+
+# Chapter 14: Human Detection & Tracking
+
+## Learning Objectives
+
+By the end of this chapter, you will be able to:
+- Detect and track humans in robot environments with high accuracy
+- Estimate 2D and 3D human poses for gesture recognition
+- Implement face detection, recognition, and gaze tracking
+- Build safe human-robot interaction systems
+- Handle occlusions and multi-person scenarios
+
+## Introduction
+
+For humanoid robots to interact naturally with people, they must first perceive humans accurately. This involves more than simple object detection—robots need to understand human location, pose, identity, gestures, and attention. Human detection and tracking is the foundation of human-robot interaction (HRI), enabling applications from service robots to collaborative assistants.
+
+This chapter covers the complete pipeline for human perception: from detecting people in images to tracking them over time, estimating their poses, recognizing faces, and understanding gestures and intent.
+
+### Why Human-Specific Detection?
+
+**Challenges:**
+- **Articulation**: Humans have complex, non-rigid bodies with many degrees of freedom
+- **Appearance variation**: Clothing, lighting, viewing angles create massive variability
+- **Occlusion**: People partially hide each other and objects
+- **Crowded scenes**: Multiple overlapping people
+- **Real-time requirements**: Interaction demands low latency (`<100ms`)
+
+**Applications:**
+- **Service robots**: Approach and assist specific people
+- **Collaborative robots**: Work safely alongside humans
+- **Social robots**: Recognize and engage with familiar people
+- **Healthcare robots**: Monitor patient activity and falls
+- **Security robots**: Track and identify individuals
+
+## Human Detection
+
+### Person Detection with Deep Learning
+
+**Using YOLOv8 Person Class:**
+
+```python
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import Image
+from vision_msgs.msg import Detection2DArray, Detection2D, ObjectHypothesisWithPose
+from cv_bridge import CvBridge
+from ultralytics import YOLO
+import cv2
+import numpy as np
+
+class PersonDetectorNode(Node):
+    def __init__(self):
+        super().__init__('person_detector')
+
+        # Load YOLOv8 model
+        self.model = YOLO('yolov8n.pt')  # Or yolov8m for better accuracy
+
+        self.bridge = CvBridge()
+
+        # Subscribers and publishers
+        self.image_sub = self.create_subscription(
+            Image, '/camera/image_raw', self.detect_persons, 10
+        )
+
+        self.detection_pub = self.create_publisher(
+            Detection2DArray, '/human_detection/persons', 10
+        )
+
+        self.viz_pub = self.create_publisher(
+            Image, '/human_detection/visualization', 10
+        )
+
+        # Parameters
+        self.conf_threshold = 0.5
+        self.person_class_id = 0  # COCO class 0 is 'person'
+
+        self.get_logger().info('Person detector initialized')
+
+    def detect_persons(self, msg):
+        # Convert to OpenCV
+        cv_image = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
+
+        # Run inference
+        results = self.model(
+            cv_image,
+            classes=[self.person_class_id],  # Only detect persons
+            conf=self.conf_threshold,
+            verbose=False
+        )
+
+        # Parse detections
+        detections = Detection2DArray()
+        detections.header = msg.header
+
+        annotated_image = cv_image.copy()
+
+        for result in results:
+            boxes = result.boxes
+
+            for box in boxes:
+                # Extract bounding box
+                x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+                conf = float(box.conf[0])
+
+                # Create Detection2D message
+                detection = Detection2D()
+                detection.header = msg.header
+
+                # Bounding box
+                detection.bbox.center.position.x = (x1 + x2) / 2
+                detection.bbox.center.position.y = (y1 + y2) / 2
+                detection.bbox.size_x = x2 - x1
+                detection.bbox.size_y = y2 - y1
+
+                # Hypothesis
+                hypothesis = ObjectHypothesisWithPose()
+                hypothesis.hypothesis.class_id = 'person'
+                hypothesis.hypothesis.score = conf
+                detection.results.append(hypothesis)
+
+                detections.detections.append(detection)
+
+                # Visualize
+                cv2.rectangle(
+                    annotated_image,
+                    (int(x1), int(y1)), (int(x2), int(y2)),
+                    (0, 255, 0), 2
+                )
+                cv2.putText(
+                    annotated_image,
+                    f'Person {conf:.2f}',
+                    (int(x1), int(y1) - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5, (0, 255, 0), 2
+                )
+
+        # Publish
+        self.detection_pub.publish(detections)
+
+        viz_msg = self.bridge.cv2_to_imgmsg(annotated_image, 'bgr8')
+        viz_msg.header = msg.header
+        self.viz_pub.publish(viz_msg)
+
+        self.get_logger().info(f'Detected {len(detections.detections)} persons')
+```
+
+### Depth-Based Person Localization
+
+**3D Position from RGB-D:**
+
+```python
+class Person3DLocator(Node):
+    def __init__(self):
+        super().__init__('person_3d_locator')
+
+        self.bridge = CvBridge()
+
+        # Synchronized subscribers
+        from message_filters import ApproximateTimeSynchronizer, Subscriber
+
+        self.rgb_sub = Subscriber(self, Image, '/camera/color/image_raw')
+        self.depth_sub = Subscriber(self, Image, '/camera/depth/image_raw')
+        self.detection_sub = Subscriber(self, Detection2DArray, '/human_detection/persons')
+
+        self.sync = ApproximateTimeSynchronizer(
+            [self.rgb_sub, self.depth_sub, self.detection_sub],
+            queue_size=10,
+            slop=0.1
+        )
+        self.sync.registerCallback(self.localize_persons)
+
+        # Publisher for 3D positions
+        from geometry_msgs.msg import PoseArray, Pose
+        self.pose_pub = self.create_publisher(PoseArray, '/human_detection/poses_3d', 10)
+
+        # Camera intrinsics (load from calibration)
+        self.fx = 615.0  # Focal length x
+        self.fy = 615.0  # Focal length y
+        self.cx = 320.0  # Principal point x
+        self.cy = 240.0  # Principal point y
+
+    def localize_persons(self, rgb_msg, depth_msg, detection_msg):
+        # Convert depth image
+        depth_image = self.bridge.imgmsg_to_cv2(depth_msg, desired_encoding='passthrough')
+
+        # Create pose array
+        pose_array = PoseArray()
+        pose_array.header = detection_msg.header
+        pose_array.header.frame_id = 'camera_link'
+
+        for detection in detection_msg.detections:
+            # Get center of bounding box
+            cx_bbox = detection.bbox.center.position.x
+            cy_bbox = detection.bbox.center.position.y
+
+            # Sample depth at center (with averaging for robustness)
+            u = int(cx_bbox)
+            v = int(cy_bbox)
+
+            # Average depth in 5x5 region around center
+            depth_region = depth_image[v-2:v+3, u-2:u+3]
+            valid_depths = depth_region[depth_region > 0]
+
+            if len(valid_depths) == 0:
+                continue
+
+            depth = np.median(valid_depths) / 1000.0  # Convert mm to meters
+
+            # Back-project to 3D
+            x = (u - self.cx) * depth / self.fx
+            y = (v - self.cy) * depth / self.fy
+            z = depth
+
+            # Create pose
+            pose = Pose()
+            pose.position.x = x
+            pose.position.y = y
+            pose.position.z = z
+            pose.orientation.w = 1.0  # Identity quaternion
+
+            pose_array.poses.append(pose)
+
+        self.pose_pub.publish(pose_array)
+        self.get_logger().info(f'Localized {len(pose_array.poses)} persons in 3D')
+```
+
+## Human Pose Estimation
+
+### 2D Pose Estimation
+
+**Using MediaPipe:**
+
+```bash
+pip3 install mediapipe
+```
+
+```python
+import mediapipe as mp
+import cv2
+import numpy as np
+
+class PoseEstimatorNode(Node):
+    def __init__(self):
+        super().__init__('pose_estimator')
+
+        # Initialize MediaPipe Pose
+        self.mp_pose = mp.solutions.pose
+        self.pose = self.mp_pose.Pose(
+            static_image_mode=False,
+            model_complexity=1,  # 0=Lite, 1=Full, 2=Heavy
+            smooth_landmarks=True,
+            enable_segmentation=False,
+            min_detection_confidence=0.5,
+            min_tracking_confidence=0.5
+        )
+
+        self.mp_drawing = mp.solutions.drawing_utils
+
+        self.bridge = CvBridge()
+
+        # Subscribers and publishers
+        self.image_sub = self.create_subscription(
+            Image, '/camera/image_raw', self.estimate_pose, 10
+        )
+
+        self.pose_pub = self.create_publisher(
+            PoseArray, '/human_pose/keypoints_2d', 10
+        )
+
+        self.viz_pub = self.create_publisher(
+            Image, '/human_pose/visualization', 10
+        )
+
+    def estimate_pose(self, msg):
+        # Convert to OpenCV
+        cv_image = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
+        rgb_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2RGB)
+
+        # Process image
+        results = self.pose.process(rgb_image)
+
+        # Draw landmarks on image
+        annotated_image = cv_image.copy()
+
+        if results.pose_landmarks:
+            # Draw pose landmarks
+            self.mp_drawing.draw_landmarks(
+                annotated_image,
+                results.pose_landmarks,
+                self.mp_pose.POSE_CONNECTIONS,
+                self.mp_drawing.DrawingSpec(color=(0, 255, 0), thickness=2, circle_radius=2),
+                self.mp_drawing.DrawingSpec(color=(0, 0, 255), thickness=2)
+            )
+
+            # Extract keypoints
+            keypoints = []
+            for landmark in results.pose_landmarks.landmark:
+                keypoints.append({
+                    'x': landmark.x * cv_image.shape[1],  # Normalize to pixel coords
+                    'y': landmark.y * cv_image.shape[0],
+                    'z': landmark.z,  # Depth relative to hips
+                    'visibility': landmark.visibility
+                })
+
+            # Publish keypoints (convert to appropriate message type)
+            self.publish_keypoints(keypoints, msg.header)
+
+        # Publish visualization
+        viz_msg = self.bridge.cv2_to_imgmsg(annotated_image, 'bgr8')
+        viz_msg.header = msg.header
+        self.viz_pub.publish(viz_msg)
+
+    def publish_keypoints(self, keypoints, header):
+        # Convert to ROS message
+        # (Implementation depends on your message definition)
+        pass
+```
+
+**MediaPipe Pose Landmark Names:**
+
+```python
+# 33 landmarks
+POSE_LANDMARKS = {
+    0: "nose",
+    1: "left_eye_inner", 2: "left_eye", 3: "left_eye_outer",
+    4: "right_eye_inner", 5: "right_eye", 6: "right_eye_outer",
+    7: "left_ear", 8: "right_ear",
+    9: "mouth_left", 10: "mouth_right",
+    11: "left_shoulder", 12: "right_shoulder",
+    13: "left_elbow", 14: "right_elbow",
+    15: "left_wrist", 16: "right_wrist",
+    17: "left_pinky", 18: "right_pinky",
+    19: "left_index", 20: "right_index",
+    21: "left_thumb", 22: "right_thumb",
+    23: "left_hip", 24: "right_hip",
+    25: "left_knee", 26: "right_knee",
+    27: "left_ankle", 28: "right_ankle",
+    29: "left_heel", 30: "right_heel",
+    31: "left_foot_index", 32: "right_foot_index"
+}
+```
+
+### 3D Pose Estimation
+
+**Lifting 2D to 3D with VideoPose3D:**
+
+```python
+class Pose3DEstimator(Node):
+    def __init__(self):
+        super().__init__('pose_3d_estimator')
+
+        # Load pre-trained 3D pose model
+        # (e.g., VideoPose3D, MediaPipe Pose with depth)
+
+        self.bridge = CvBridge()
+
+        # Synchronized depth and 2D pose
+        from message_filters import ApproximateTimeSynchronizer, Subscriber
+
+        self.depth_sub = Subscriber(self, Image, '/camera/depth/image_raw')
+        self.pose_2d_sub = Subscriber(self, PoseArray, '/human_pose/keypoints_2d')
+
+        self.sync = ApproximateTimeSynchronizer(
+            [self.depth_sub, self.pose_2d_sub],
+            queue_size=10,
+            slop=0.1
+        )
+        self.sync.registerCallback(self.lift_to_3d)
+
+        self.pose_3d_pub = self.create_publisher(
+            PoseArray, '/human_pose/keypoints_3d', 10
+        )
+
+    def lift_to_3d(self, depth_msg, pose_2d_msg):
+        # Convert depth image
+        depth_image = self.bridge.imgmsg_to_cv2(depth_msg, desired_encoding='passthrough')
+
+        # For each 2D keypoint, look up depth and back-project
+        poses_3d = []
+
+        for pose_2d in pose_2d_msg.poses:
+            # Extract 2D keypoints from pose_2d
+            # (Format depends on your message definition)
+
+            keypoints_3d = []
+
+            for kp_2d in keypoints_2d:
+                u = int(kp_2d['x'])
+                v = int(kp_2d['y'])
+
+                # Get depth
+                if 0 <= u < depth_image.shape[1] and 0 <= v < depth_image.shape[0]:
+                    depth = depth_image[v, u] / 1000.0  # mm to meters
+
+                    # Back-project to 3D
+                    x = (u - self.cx) * depth / self.fx
+                    y = (v - self.cy) * depth / self.fy
+                    z = depth
+
+                    keypoints_3d.append({'x': x, 'y': y, 'z': z})
+                else:
+                    keypoints_3d.append({'x': 0, 'y': 0, 'z': 0})
+
+            poses_3d.append(keypoints_3d)
+
+        # Publish 3D poses
+        self.publish_3d_poses(poses_3d, depth_msg.header)
+```
+
+## Gesture Recognition
+
+### Simple Gesture Recognition
+
+```python
+class GestureRecognizer:
+    """Recognize basic gestures from pose keypoints"""
+
+    def __init__(self):
+        pass
+
+    def recognize_gesture(self, keypoints):
+        """
+        Recognize gesture from pose keypoints
+
+        Args:
+            keypoints: Dictionary of pose landmarks
+
+        Returns:
+            gesture: String name of recognized gesture
+        """
+
+        # Extract key landmarks
+        left_wrist = keypoints[15]
+        right_wrist = keypoints[16]
+        left_shoulder = keypoints[11]
+        right_shoulder = keypoints[12]
+        nose = keypoints[0]
+
+        # Check visibility
+        if left_wrist['visibility'] < 0.5 or right_wrist['visibility'] < 0.5:
+            return "unknown"
+
+        # Wave: Hand above shoulder, moving side-to-side
+        if self.is_waving(left_wrist, left_shoulder) or self.is_waving(right_wrist, right_shoulder):
+            return "wave"
+
+        # Hands up: Both hands above head
+        if self.hands_up(left_wrist, right_wrist, nose):
+            return "hands_up"
+
+        # Pointing: One arm extended forward
+        if self.is_pointing(left_wrist, left_shoulder) or self.is_pointing(right_wrist, right_shoulder):
+            return "pointing"
+
+        # Crossed arms
+        if self.arms_crossed(left_wrist, right_wrist, left_shoulder, right_shoulder):
+            return "crossed_arms"
+
+        return "neutral"
+
+    def is_waving(self, wrist, shoulder):
+        """Check if hand is waving (above shoulder)"""
+        return wrist['y'] < shoulder['y'] and wrist['visibility'] > 0.5
+
+    def hands_up(self, left_wrist, right_wrist, nose):
+        """Check if both hands are above head"""
+        return (left_wrist['y'] < nose['y'] and
+                right_wrist['y'] < nose['y'] and
+                left_wrist['visibility'] > 0.5 and
+                right_wrist['visibility'] > 0.5)
+
+    def is_pointing(self, wrist, shoulder):
+        """Check if arm is extended (simple heuristic)"""
+        # Distance from wrist to shoulder
+        dist = np.sqrt((wrist['x'] - shoulder['x'])**2 +
+                       (wrist['y'] - shoulder['y'])**2)
+
+        # If distance is large, arm is extended
+        threshold = 200  # pixels (adjust based on image size)
+        return dist > threshold and wrist['visibility'] > 0.5
+
+    def arms_crossed(self, left_wrist, right_wrist, left_shoulder, right_shoulder):
+        """Check if arms are crossed"""
+        # Left wrist near right shoulder, right wrist near left shoulder
+        left_cross = abs(left_wrist['x'] - right_shoulder['x']) < 50
+        right_cross = abs(right_wrist['x'] - left_shoulder['x']) < 50
+
+        return left_cross and right_cross
+```
+
+### Temporal Gesture Recognition with RNN
+
+```python
+import torch
+import torch.nn as nn
+
+class GestureLSTM(nn.Module):
+    """LSTM for temporal gesture recognition"""
+
+    def __init__(self, input_size=33*2, hidden_size=128, num_classes=10):
+        """
+        Args:
+            input_size: Number of input features (33 keypoints * 2 coords)
+            hidden_size: LSTM hidden size
+            num_classes: Number of gesture classes
+        """
+        super(GestureLSTM, self).__init__()
+
+        self.lstm = nn.LSTM(
+            input_size=input_size,
+            hidden_size=hidden_size,
+            num_layers=2,
+            batch_first=True,
+            dropout=0.3
+        )
+
+        self.fc = nn.Linear(hidden_size, num_classes)
+
+    def forward(self, x):
+        """
+        Args:
+            x: (batch, sequence_length, input_size)
+
+        Returns:
+            logits: (batch, num_classes)
+        """
+
+        # LSTM
+        lstm_out, (h_n, c_n) = self.lstm(x)
+
+        # Take last hidden state
+        last_hidden = h_n[-1]  # (batch, hidden_size)
+
+        # Classification
+        logits = self.fc(last_hidden)
+
+        return logits
+
+# Usage
+class TemporalGestureRecognizer(Node):
+    def __init__(self):
+        super().__init__('temporal_gesture_recognizer')
+
+        # Load model
+        self.model = GestureLSTM()
+        self.model.load_state_dict(torch.load('gesture_model.pth'))
+        self.model.eval()
+
+        # Buffer for temporal window
+        self.sequence_length = 30  # 30 frames
+        self.keypoint_buffer = []
+
+        # Gesture labels
+        self.gesture_labels = [
+            'wave', 'point', 'thumbs_up', 'clap', 'salute',
+            'beckon', 'stop', 'okay', 'peace', 'neutral'
+        ]
+
+        # Subscribe to pose keypoints
+        self.pose_sub = self.create_subscription(
+            PoseArray, '/human_pose/keypoints_2d', self.process_pose, 10
+        )
+
+        # Publish recognized gesture
+        from std_msgs.msg import String
+        self.gesture_pub = self.create_publisher(String, '/gestures/recognized', 10)
+
+    def process_pose(self, msg):
+        if len(msg.poses) == 0:
+            return
+
+        # Extract keypoints from first person
+        pose = msg.poses[0]
+
+        # Flatten keypoints to vector
+        keypoints_flat = []
+        for kp in pose.keypoints:  # Adjust based on your message format
+            keypoints_flat.extend([kp.x, kp.y])
+
+        # Add to buffer
+        self.keypoint_buffer.append(keypoints_flat)
+
+        # Keep only last sequence_length frames
+        if len(self.keypoint_buffer) > self.sequence_length:
+            self.keypoint_buffer.pop(0)
+
+        # Recognize gesture when buffer is full
+        if len(self.keypoint_buffer) == self.sequence_length:
+            gesture = self.recognize_gesture()
+
+            # Publish
+            gesture_msg = String()
+            gesture_msg.data = gesture
+            self.gesture_pub.publish(gesture_msg)
+
+    def recognize_gesture(self):
+        # Convert buffer to tensor
+        sequence = torch.FloatTensor(self.keypoint_buffer).unsqueeze(0)  # (1, seq_len, features)
+
+        # Inference
+        with torch.no_grad():
+            logits = self.model(sequence)
+            prediction = torch.argmax(logits, dim=1).item()
+
+        return self.gesture_labels[prediction]
+```
+
+## Face Detection and Recognition
+
+### Face Detection with MediaPipe
+
+```python
+import mediapipe as mp
+
+class FaceDetectorNode(Node):
+    def __init__(self):
+        super().__init__('face_detector')
+
+        # Initialize MediaPipe Face Detection
+        self.mp_face_detection = mp.solutions.face_detection
+        self.face_detection = self.mp_face_detection.FaceDetection(
+            model_selection=1,  # 0=short range (2m), 1=full range (5m)
+            min_detection_confidence=0.5
+        )
+
+        self.mp_drawing = mp.solutions.drawing_utils
+
+        self.bridge = CvBridge()
+
+        # Subscribers and publishers
+        self.image_sub = self.create_subscription(
+            Image, '/camera/image_raw', self.detect_faces, 10
+        )
+
+        self.face_pub = self.create_publisher(
+            Detection2DArray, '/face_detection/faces', 10
+        )
+
+        self.viz_pub = self.create_publisher(
+            Image, '/face_detection/visualization', 10
+        )
+
+    def detect_faces(self, msg):
+        # Convert to OpenCV
+        cv_image = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
+        rgb_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2RGB)
+
+        # Detect faces
+        results = self.face_detection.process(rgb_image)
+
+        annotated_image = cv_image.copy()
+        detections = Detection2DArray()
+        detections.header = msg.header
+
+        if results.detections:
+            for detection in results.detections:
+                # Draw bounding box
+                self.mp_drawing.draw_detection(annotated_image, detection)
+
+                # Extract bounding box
+                bbox = detection.location_data.relative_bounding_box
+                h, w, _ = cv_image.shape
+
+                x = int(bbox.xmin * w)
+                y = int(bbox.ymin * h)
+                width = int(bbox.width * w)
+                height = int(bbox.height * h)
+
+                # Create Detection2D message
+                det_msg = Detection2D()
+                det_msg.header = msg.header
+                det_msg.bbox.center.position.x = x + width / 2
+                det_msg.bbox.center.position.y = y + height / 2
+                det_msg.bbox.size_x = width
+                det_msg.bbox.size_y = height
+
+                hypothesis = ObjectHypothesisWithPose()
+                hypothesis.hypothesis.class_id = 'face'
+                hypothesis.hypothesis.score = detection.score[0]
+                det_msg.results.append(hypothesis)
+
+                detections.detections.append(det_msg)
+
+        # Publish
+        self.face_pub.publish(detections)
+
+        viz_msg = self.bridge.cv2_to_imgmsg(annotated_image, 'bgr8')
+        viz_msg.header = msg.header
+        self.viz_pub.publish(viz_msg)
+```
+
+### Face Recognition
+
+```python
+import face_recognition
+import pickle
+
+class FaceRecognitionNode(Node):
+    def __init__(self):
+        super().__init__('face_recognition')
+
+        self.bridge = CvBridge()
+
+        # Load known faces database
+        self.known_faces = self.load_known_faces('known_faces.pkl')
+
+        # Subscribers
+        self.image_sub = self.create_subscription(
+            Image, '/camera/image_raw', self.recognize_faces, 10
+        )
+
+        # Publishers
+        from std_msgs.msg import String
+        self.recognition_pub = self.create_publisher(
+            String, '/face_recognition/identified', 10
+        )
+
+    def load_known_faces(self, filename):
+        """Load database of known face encodings"""
+        try:
+            with open(filename, 'rb') as f:
+                return pickle.load(f)
+        except FileNotFoundError:
+            self.get_logger().warn(f'Known faces database not found: {filename}')
+            return {'encodings': [], 'names': []}
+
+    def recognize_faces(self, msg):
+        # Convert to OpenCV
+        cv_image = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
+        rgb_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2RGB)
+
+        # Detect face locations
+        face_locations = face_recognition.face_locations(rgb_image)
+
+        # Compute face encodings
+        face_encodings = face_recognition.face_encodings(rgb_image, face_locations)
+
+        # Match against known faces
+        for face_encoding, face_location in zip(face_encodings, face_locations):
+            # Compare to known faces
+            matches = face_recognition.compare_faces(
+                self.known_faces['encodings'],
+                face_encoding,
+                tolerance=0.6
+            )
+
+            name = "Unknown"
+
+            if True in matches:
+                # Find best match
+                face_distances = face_recognition.face_distance(
+                    self.known_faces['encodings'],
+                    face_encoding
+                )
+                best_match_index = np.argmin(face_distances)
+
+                if matches[best_match_index]:
+                    name = self.known_faces['names'][best_match_index]
+
+            # Publish identification
+            msg = String()
+            msg.data = name
+            self.recognition_pub.publish(msg)
+
+            self.get_logger().info(f'Recognized: {name}')
+
+    def add_known_face(self, image, name):
+        """Add a new face to the database"""
+
+        rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+        # Detect and encode face
+        face_encodings = face_recognition.face_encodings(rgb_image)
+
+        if len(face_encodings) > 0:
+            self.known_faces['encodings'].append(face_encodings[0])
+            self.known_faces['names'].append(name)
+
+            # Save database
+            with open('known_faces.pkl', 'wb') as f:
+                pickle.dump(self.known_faces, f)
+
+            self.get_logger().info(f'Added face for {name}')
+        else:
+            self.get_logger().warn('No face detected in image')
+```
+
+## Gaze and Attention Tracking
+
+### Gaze Estimation
+
+```python
+class GazeEstimator(Node):
+    """Estimate where a person is looking"""
+
+    def __init__(self):
+        super().__init__('gaze_estimator')
+
+        # MediaPipe Face Mesh for detailed face landmarks
+        self.mp_face_mesh = mp.solutions.face_mesh
+        self.face_mesh = self.mp_face_mesh.FaceMesh(
+            max_num_faces=5,
+            refine_landmarks=True,  # Include iris landmarks
+            min_detection_confidence=0.5,
+            min_tracking_confidence=0.5
+        )
+
+        self.bridge = CvBridge()
+
+        # Subscribers
+        self.image_sub = self.create_subscription(
+            Image, '/camera/image_raw', self.estimate_gaze, 10
+        )
+
+        # Publishers
+        from geometry_msgs.msg import Vector3Stamped
+        self.gaze_pub = self.create_publisher(
+            Vector3Stamped, '/gaze/direction', 10
+        )
+
+    def estimate_gaze(self, msg):
+        # Convert to OpenCV
+        cv_image = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
+        rgb_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2RGB)
+
+        # Process image
+        results = self.face_mesh.process(rgb_image)
+
+        if results.multi_face_landmarks:
+            for face_landmarks in results.multi_face_landmarks:
+                # Extract eye landmarks
+                left_eye_center = self.get_eye_center(face_landmarks, 'left')
+                right_eye_center = self.get_eye_center(face_landmarks, 'right')
+                left_iris = self.get_iris_center(face_landmarks, 'left')
+                right_iris = self.get_iris_center(face_landmarks, 'right')
+
+                # Compute gaze vector
+                gaze_vector = self.compute_gaze_vector(
+                    left_eye_center, right_eye_center,
+                    left_iris, right_iris
+                )
+
+                # Publish gaze direction
+                gaze_msg = Vector3Stamped()
+                gaze_msg.header = msg.header
+                gaze_msg.vector.x = gaze_vector[0]
+                gaze_msg.vector.y = gaze_vector[1]
+                gaze_msg.vector.z = gaze_vector[2]
+
+                self.gaze_pub.publish(gaze_msg)
+
+    def get_eye_center(self, face_landmarks, side):
+        """Get center of eye region"""
+        # Left eye: landmarks 33, 133, 160, 159, 158, 157, 173
+        # Right eye: landmarks 362, 398, 384, 385, 386, 387, 263
+
+        if side == 'left':
+            indices = [33, 133, 160, 159, 158, 157, 173]
+        else:
+            indices = [362, 398, 384, 385, 386, 387, 263]
+
+        points = [face_landmarks.landmark[i] for i in indices]
+        center = np.mean([[p.x, p.y, p.z] for p in points], axis=0)
+
+        return center
+
+    def get_iris_center(self, face_landmarks, side):
+        """Get center of iris"""
+        # Left iris: landmarks 468-472
+        # Right iris: landmarks 473-477
+
+        if side == 'left':
+            indices = list(range(468, 473))
+        else:
+            indices = list(range(473, 478))
+
+        points = [face_landmarks.landmark[i] for i in indices]
+        center = np.mean([[p.x, p.y, p.z] for p in points], axis=0)
+
+        return center
+
+    def compute_gaze_vector(self, left_eye, right_eye, left_iris, right_iris):
+        """Compute gaze direction vector"""
+
+        # Compute offset of iris from eye center
+        left_offset = left_iris - left_eye
+        right_offset = right_iris - right_eye
+
+        # Average offsets
+        avg_offset = (left_offset + right_offset) / 2
+
+        # Normalize to unit vector
+        gaze_vector = avg_offset / np.linalg.norm(avg_offset)
+
+        return gaze_vector
+
+    def is_looking_at_robot(self, gaze_vector, threshold=0.8):
+        """Check if person is looking at the robot (camera)"""
+
+        # Camera is at (0, 0, 1) in camera frame
+        camera_direction = np.array([0, 0, 1])
+
+        # Dot product (cosine of angle)
+        dot_product = np.dot(gaze_vector, camera_direction)
+
+        return dot_product > threshold
+```
+
+## Multi-Person Tracking
+
+### Person Re-identification
+
+```python
+class PersonReIDTracker(Node):
+    """Track multiple people with re-identification"""
+
+    def __init__(self):
+        super().__init__('person_reid_tracker')
+
+        # Load ReID model (e.g., OSNet)
+        # This extracts appearance features for each person
+
+        self.bridge = CvBridge()
+
+        # Track database
+        self.tracks = {}  # track_id -> {'features': [], 'bbox': [], 'last_seen': time}
+        self.next_track_id = 0
+
+        # Subscriptions
+        self.image_sub = self.create_subscription(
+            Image, '/camera/image_raw', self.track_persons, 10
+        )
+
+        self.detection_sub = self.create_subscription(
+            Detection2DArray, '/human_detection/persons', self.update_tracks, 10
+        )
+
+    def extract_features(self, image, bbox):
+        """Extract ReID features from person crop"""
+
+        x1, y1, x2, y2 = bbox
+
+        # Crop person
+        person_crop = image[int(y1):int(y2), int(x1):int(x2)]
+
+        # Extract features using ReID model
+        # (Simplified - use actual ReID model like OSNet)
+        features = self.reid_model.extract_features(person_crop)
+
+        return features
+
+    def match_tracks(self, features, bbox):
+        """Match detection to existing tracks"""
+
+        if len(self.tracks) == 0:
+            return None
+
+        # Compute similarity to all tracks
+        max_similarity = -1
+        best_track_id = None
+
+        for track_id, track in self.tracks.items():
+            # Appearance similarity
+            appearance_sim = self.cosine_similarity(features, track['features'])
+
+            # Spatial proximity
+            spatial_sim = self.compute_iou(bbox, track['bbox'])
+
+            # Combined similarity
+            similarity = 0.7 * appearance_sim + 0.3 * spatial_sim
+
+            if similarity > max_similarity:
+                max_similarity = similarity
+                best_track_id = track_id
+
+        # Threshold for matching
+        if max_similarity > 0.5:
+            return best_track_id
+        else:
+            return None
+
+    def update_tracks(self, detection_msg):
+        # For each detection
+        # 1. Extract features
+        # 2. Match to existing tracks
+        # 3. Create new track if no match
+        # 4. Update track database
+
+        pass
+
+    def cosine_similarity(self, feat1, feat2):
+        """Compute cosine similarity between feature vectors"""
+        return np.dot(feat1, feat2) / (np.linalg.norm(feat1) * np.linalg.norm(feat2))
+
+    def compute_iou(self, bbox1, bbox2):
+        """Compute IoU between two bounding boxes"""
+        x1_1, y1_1, x2_1, y2_1 = bbox1
+        x1_2, y1_2, x2_2, y2_2 = bbox2
+
+        # Intersection
+        x1_i = max(x1_1, x1_2)
+        y1_i = max(y1_1, y1_2)
+        x2_i = min(x2_1, x2_2)
+        y2_i = min(y2_1, y2_2)
+
+        if x2_i < x1_i or y2_i < y1_i:
+            return 0.0
+
+        intersection = (x2_i - x1_i) * (y2_i - y1_i)
+
+        # Union
+        area1 = (x2_1 - x1_1) * (y2_1 - y1_1)
+        area2 = (x2_2 - x1_2) * (y2_2 - y1_2)
+        union = area1 + area2 - intersection
+
+        return intersection / union
+```
+
+## Safety Considerations
+
+### Proximity Monitoring
+
+```python
+class SafetyMonitor(Node):
+    """Monitor human proximity for safe HRI"""
+
+    def __init__(self):
+        super().__init__('safety_monitor')
+
+        # Safety zones (meters)
+        self.warning_distance = 2.0  # Slow down
+        self.danger_distance = 0.5   # Stop
+
+        # Subscribe to human 3D positions
+        self.pose_sub = self.create_subscription(
+            PoseArray, '/human_detection/poses_3d', self.check_safety, 10
+        )
+
+        # Publish safety status
+        from std_msgs.msg import String
+        self.safety_pub = self.create_publisher(String, '/safety/status', 10)
+
+        # Emergency stop service client
+        from std_srvs.srv import Trigger
+        self.estop_client = self.create_client(Trigger, '/robot/emergency_stop')
+
+    def check_safety(self, msg):
+        """Check if any person is too close"""
+
+        min_distance = float('inf')
+
+        for pose in msg.poses:
+            # Distance to person
+            distance = np.sqrt(
+                pose.position.x**2 +
+                pose.position.y**2 +
+                pose.position.z**2
+            )
+
+            min_distance = min(min_distance, distance)
+
+        # Evaluate safety level
+        if min_distance < self.danger_distance:
+            self.get_logger().error(f'DANGER: Person at {min_distance:.2f}m!')
+            self.trigger_emergency_stop()
+            safety_msg = String()
+            safety_msg.data = 'DANGER'
+            self.safety_pub.publish(safety_msg)
+
+        elif min_distance < self.warning_distance:
+            self.get_logger().warn(f'WARNING: Person at {min_distance:.2f}m')
+            safety_msg = String()
+            safety_msg.data = 'WARNING'
+            self.safety_pub.publish(safety_msg)
+
+        else:
+            safety_msg = String()
+            safety_msg.data = 'SAFE'
+            self.safety_pub.publish(safety_msg)
+
+    def trigger_emergency_stop(self):
+        """Trigger robot emergency stop"""
+
+        if not self.estop_client.wait_for_service(timeout_sec=0.5):
+            self.get_logger().error('Emergency stop service not available!')
+            return
+
+        request = Trigger.Request()
+        future = self.estop_client.call_async(request)
+```
+
+## Practice Exercises
+
+### Exercise 1: Person Following Robot
+
+**Task:** Build a robot that follows a designated person
+
+**Requirements:**
+- Detect and track a specific person (e.g., wearing a colored shirt)
+- Maintain 1.5m distance from the person
+- Navigate around obstacles while following
+- Stop if the person stops or raises their hand
+- Handle occlusions and person re-entry
+
+### Exercise 2: Gesture-Controlled Robot
+
+**Task:** Control robot with hand gestures
+
+**Requirements:**
+- Recognize 5 gestures: wave, point, stop, come here, go away
+- Map gestures to robot actions (move, stop, turn)
+- Real-time recognition (&lt;100ms latency)
+- Robust to lighting changes and backgrounds
+- Handle multi-person scenarios (who is commanding?)
+
+### Exercise 3: Social Robot with Face Recognition
+
+**Task:** Build robot that greets familiar people by name
+
+**Requirements:**
+- Detect and recognize faces of known individuals
+- Track people and maintain eye contact
+- Greet by name when recognized
+- Learn new faces on request
+- Privacy-preserving (local processing only)
+
+## Best Practices
+
+### 1. Multi-Modal Fusion
+
+Combine multiple cues for robust human understanding:
+- **Vision + Depth**: Better 3D localization
+- **Pose + Gestures**: Context for action recognition
+- **Face + Voice**: Multi-modal person identification
+
+### 2. Temporal Consistency
+
+- Use tracking to maintain identity across frames
+- Smooth keypoint estimates with temporal filters
+- Use RNNs/LSTMs for gesture recognition
+
+### 3. Privacy and Ethics
+
+- **Consent**: Obtain permission before face recognition
+- **Data minimization**: Don't store more than needed
+- **Local processing**: Keep face data on device
+- **Transparency**: Inform people they're being tracked
+- **Opt-out**: Provide way to disable tracking
+
+### 4. Robustness
+
+- Test under various lighting conditions
+- Handle occlusions gracefully
+- Fall back to simpler methods when advanced methods fail
+- Validate with diverse demographics
+
+## Common Pitfalls
+
+1. **Not handling occlusions**: People partially hide each other
+2. **Ignoring privacy**: Face recognition without consent
+3. **Single-person assumptions**: Real world has multiple people
+4. **Static gestures only**: Missing temporal dynamics
+5. **Not validating across demographics**: Biased training data
+
+## Further Reading
+
+**Papers:**
+- "OpenPose: Realtime Multi-Person 2D Pose Estimation" (Cao et al., 2019)
+- "MediaPipe: A Framework for Building Perception Pipelines" (Lugaresi et al., 2019)
+- "Deep Learning for Person Re-identification" (Ye et al., 2021)
+
+**Libraries:**
+- [MediaPipe](https://mediapipe.dev/)
+- [OpenPose](https://github.com/CMU-Perceptual-Computing-Lab/openpose)
+- [face_recognition](https://github.com/ageitgey/face_recognition)
+
+## Next Steps
+
+Now that you can detect and understand humans:
+
+1. **Chapter 15**: Use human detection for AI-driven interaction planning
+2. **Chapter 22**: Build natural human-robot interaction systems
+3. **Chapter 24**: Implement teleoperation with gesture control
+4. **Project 3**: Build conversational robot with face recognition
+
+:::tip Key Takeaway
+Human detection is more than just finding people in images—it's about understanding their pose, gestures, identity, and intent. Combine multiple perception modalities (vision, depth, audio) and respect privacy while building engaging human-robot interactions.
+:::

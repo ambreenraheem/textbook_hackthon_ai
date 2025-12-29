@@ -1,0 +1,77 @@
+---
+id: appendix-e-hardware-comparison
+title: Appendix E - Humanoid Robot Hardware Comparison
+description: Comparison of commercial and research humanoid robot platforms, actuators, and sensors.
+sidebar_label: E. Hardware Comparison
+sidebar_position: 5
+category: resources
+format: table
+keywords: [hardware, humanoid robots, actuators, sensors, comparison]
+---
+
+# Appendix E: Humanoid Robot Hardware Comparison
+
+Comprehensive comparison of humanoid robot platforms, actuators, sensors, and computing hardware.
+
+## Commercial Humanoid Robot Platforms
+
+| Robot | Manufacturer | Height | Weight | DOF | Key Features | Approx. Cost |
+|-------|--------------|---------|---------|-----|--------------|--------------|
+| Atlas | Boston Dynamics | 1.5m | 89kg | 28 | Hydraulic, Dynamic locomotion | Research only |
+| Digit | Agility Robotics | 1.6m | 45kg | 20 | Electric, Delivery applications | $250k+ |
+| Optimus | Tesla | 1.73m | 73kg | ~40 | Electric, General purpose | TBD |
+| H1 | Unitree Robotics | 1.8m | 47kg | 25 | Electric, Open SDK | ~$90k |
+| Apollo | Apptronik | 1.73m | 72kg | 30+ | Electric, Modular design | TBD |
+
+[Content to be expanded with more platforms and detailed specifications]
+
+## Actuator Technologies
+
+### Servo Motors
+
+| Type | Torque Range | Speed | Precision | Cost | Use Case |
+|------|--------------|-------|-----------|------|----------|
+| Dynamixel XM/XH | 1-15 Nm | High | High | $$$ | Research, Humanoids |
+| Herkulex | 2-10 Nm | Medium | High | $$ | Education, Research |
+| Standard RC Servo | 0.1-2 Nm | High | Medium | $ | Hobby, Small robots |
+
+### Brushless DC Motors
+[Content to be authored]
+
+### Hydraulic Actuators
+[Content to be authored]
+
+## Sensors
+
+### Vision Sensors
+
+| Sensor | Type | Resolution | Frame Rate | Interface | Cost |
+|--------|------|------------|------------|-----------|------|
+| Intel RealSense D435 | RGB-D | 1920x1080 | 30 fps | USB 3.0 | $200 |
+| Kinect Azure | RGB-D | 4096x3072 | 30 fps | USB 3.0 | $400 |
+| Basler ace | Industrial Camera | Varies | Up to 120 fps | GigE/USB3 | $500+ |
+
+### LiDAR Sensors
+
+| Sensor | Range | Resolution | Field of View | Interface | Cost |
+|--------|-------|------------|---------------|-----------|------|
+| Velodyne VLP-16 | 100m | 16 channels | 360° | Ethernet | $4,000 |
+| SICK TiM561 | 10m | 270° scan | 270° | Ethernet | $1,500 |
+| Hokuyo UST-10LX | 10m | 1080 points | 270° | Ethernet/USB | $1,200 |
+
+### IMU Sensors
+[Content to be authored]
+
+### Force/Torque Sensors
+[Content to be authored]
+
+## Computing Platforms
+
+| Platform | Processor | RAM | GPU | Power | Cost | Use Case |
+|----------|-----------|-----|-----|-------|------|----------|
+| NVIDIA Jetson Orin AGX | ARM Cortex-A78 | 64GB | 2048 CUDA cores | 60W | $2,000 | High-performance AI |
+| NVIDIA Jetson Orin Nano | ARM Cortex-A78 | 8GB | 1024 CUDA cores | 15W | $500 | Compact AI applications |
+| Raspberry Pi 4 | ARM Cortex-A72 | 8GB | VideoCore VI | 15W | $75 | Hobby, Education |
+| Intel NUC | Intel Core i7 | 64GB | Intel Iris Xe | 65W | $1,000 | Research, Development |
+
+[Content to be expanded with power systems, communication modules, etc.]

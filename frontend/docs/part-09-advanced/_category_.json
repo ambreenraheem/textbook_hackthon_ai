@@ -1,0 +1,12 @@
+{
+  "label": "Part IX: Advanced Topics",
+  "position": 9,
+  "collapsible": true,
+  "collapsed": true,
+  "link": {
+    "type": "generated-index",
+    "title": "Part IX: Advanced Topics",
+    "description": "Dive into embodied AI, multi-robot systems, safety and ethics, and the future of Physical AI.",
+    "slug": "/part-09-advanced"
+  }
+}

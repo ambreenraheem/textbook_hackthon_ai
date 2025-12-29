@@ -1,0 +1,12 @@
+{
+  "label": "Part VI: Motion & Control",
+  "position": 6,
+  "collapsible": true,
+  "collapsed": true,
+  "link": {
+    "type": "generated-index",
+    "title": "Part VI: Motion & Control",
+    "description": "Learn locomotion strategies, manipulation techniques, and whole-body control for humanoid robots.",
+    "slug": "/part-06-motion-control"
+  }
+}

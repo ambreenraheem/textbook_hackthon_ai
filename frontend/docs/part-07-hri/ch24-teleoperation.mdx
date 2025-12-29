@@ -1,0 +1,375 @@
+---
+id: ch24-teleoperation
+title: Chapter 24 - Teleoperation Systems
+description: Design and implement teleoperation interfaces for remote robot control.
+sidebar_label: Ch 24. Teleoperation
+sidebar_position: 3
+keywords: [teleoperation, remote control, haptic feedback, VR control]
+difficulty: advanced
+estimatedReadingTime: 30
+---
+
+# Chapter 24: Teleoperation Systems
+
+## Learning Objectives
+
+By the end of this chapter, you will be able to:
+- Design teleoperation interfaces
+- Implement haptic feedback systems
+- Handle communication delays and latency
+- Use VR/AR for robot teleoperation
+
+## Introduction
+
+Teleoperation enables humans to control robots from a distance—essential for hazardous environments (disaster response, space), remote surgery, and training humanoid robots through demonstration. This chapter covers teleoperation architectures, interfaces, and challenges like latency and shared autonomy.
+
+## Teleoperation Architectures
+
+### Direct Teleoperation
+
+**Operator** → **Control Interface** → **Network** → **Robot**
+
+Operator has full control, robot executes commands directly.
+
+**Pros**: Precise control, intuitive
+**Cons**: High latency sensitivity, requires constant attention
+
+### Supervisory Control
+
+Operator provides high-level goals, robot executes autonomously:
+
+```python
+class SupervisoryTeleopController:
+    def __init__(self, robot):
+        self.robot = robot
+        self.current_task = None
+
+    def send_goal(self, goal_description):
+        """Send high-level goal to robot."""
+        self.current_task = self.robot.plan_task(goal_description)
+        self.robot.execute_task(self.current_task)
+
+    def monitor(self):
+        """Monitor robot progress."""
+        status = self.robot.get_task_status()
+        if status.needs_intervention:
+            self.request_operator_input()
+        return status
+
+# Usage
+controller = SupervisoryTeleopController(robot)
+controller.send_goal("Navigate to the kitchen and bring back a cup")
+while not controller.current_task.complete:
+    status = controller.monitor()
+    display_status(status)
+```
+
+### Shared Autonomy
+
+Robot and operator collaborate, blending inputs:
+
+```python
+def shared_autonomy_control(operator_input, robot_suggestion, alpha=0.7):
+    """Blend operator and autonomous control."""
+    # Alpha: operator authority (0=full autonomy, 1=full teleoperation)
+    blended_command = alpha * operator_input + (1 - alpha) * robot_suggestion
+
+    # Adjust alpha based on confidence
+    if robot_suggestion.confidence > 0.9:
+        alpha = 0.3  # Trust robot more
+    elif operator_input.urgency == 'high':
+        alpha = 1.0  # Operator override
+
+    return blended_command
+```
+
+## Control Interfaces
+
+### Joystick/Gamepad
+
+**Mapping**:
+```python
+import pygame
+
+class GamepadTeleop:
+    def __init__(self, robot):
+        pygame.init()
+        self.joystick = pygame.joystick.Joystick(0)
+        self.joystick.init()
+        self.robot = robot
+
+    def control_loop(self):
+        """Map joystick inputs to robot commands."""
+        while True:
+            pygame.event.pump()
+
+            # Left stick: base motion
+            x = self.joystick.get_axis(0)  # Left/right
+            y = self.joystick.get_axis(1)  # Forward/back
+            self.robot.set_base_velocity(x, y)
+
+            # Right stick: head orientation
+            pan = self.joystick.get_axis(2)
+            tilt = self.joystick.get_axis(3)
+            self.robot.set_head_orientation(pan, tilt)
+
+            # Buttons: discrete actions
+            if self.joystick.get_button(0):  # A button
+                self.robot.close_gripper()
+            if self.joystick.get_button(1):  # B button
+                self.robot.open_gripper()
+
+            time.sleep(0.05)  # 20 Hz
+```
+
+### Motion Capture / Exoskeleton
+
+Capture operator's movements, map to robot:
+
+```python
+class MotionCaptureTeleop:
+    def __init__(self, mocap_system, robot):
+        self.mocap = mocap_system
+        self.robot = robot
+        self.mapping = self.compute_retargeting()
+
+    def retarget_motion(self):
+        """Map human motion to robot joints."""
+        human_pose = self.mocap.get_pose()
+
+        # Scale and map joints
+        robot_joints = {}
+        for human_joint, robot_joint in self.mapping.items():
+            human_angle = human_pose[human_joint]
+            robot_angle = self.scale_joint(human_angle, human_joint, robot_joint)
+            robot_joints[robot_joint] = robot_angle
+
+        self.robot.set_joint_angles(robot_joints)
+
+    def scale_joint(self, angle, human_joint, robot_joint):
+        """Scale joint angle accounting for different ranges."""
+        human_range = self.get_joint_limits(human_joint)
+        robot_range = self.robot.get_joint_limits(robot_joint)
+
+        # Normalize and rescale
+        normalized = (angle - human_range[0]) / (human_range[1] - human_range[0])
+        scaled = robot_range[0] + normalized * (robot_range[1] - robot_range[0])
+
+        return np.clip(scaled, robot_range[0], robot_range[1])
+```
+
+### VR Headset Control
+
+Immersive first-person view:
+
+```python
+import openvr
+
+class VRTeleoperation:
+    def __init__(self, robot):
+        self.vr = openvr.init(openvr.VRApplication_Scene)
+        self.robot = robot
+
+    def render_robot_view(self):
+        """Display robot's camera view in VR."""
+        left_image = self.robot.get_camera('left').capture()
+        right_image = self.robot.get_camera('right').capture()
+
+        # Submit to VR headset
+        self.vr.submit(openvr.Eye_Left, left_image)
+        self.vr.submit(openvr.Eye_Right, right_image)
+
+    def track_head_motion(self):
+        """Map operator head motion to robot head."""
+        poses = self.vr.getDeviceToAbsoluteTrackingPose()
+        hmd_pose = poses[openvr.k_unTrackedDeviceIndex_Hmd]
+
+        # Extract orientation
+        quaternion = self.extract_quaternion(hmd_pose.mDeviceToAbsoluteTracking)
+
+        # Send to robot
+        self.robot.set_head_orientation(quaternion)
+
+    def track_hand_controllers(self):
+        """Map VR hand controllers to robot manipulators."""
+        poses = self.vr.getDeviceToAbsoluteTrackingPose()
+
+        for device_index in range(openvr.k_unMaxTrackedDeviceCount):
+            if self.vr.getTrackedDeviceClass(device_index) == openvr.TrackedDeviceClass_Controller:
+                pose = poses[device_index]
+                position, orientation = self.parse_pose(pose)
+
+                # Determine left/right hand
+                role = self.vr.getControllerRoleForTrackedDeviceIndex(device_index)
+                if role == openvr.TrackedControllerRole_LeftHand:
+                    self.robot.set_left_hand_pose(position, orientation)
+                elif role == openvr.TrackedControllerRole_RightHand:
+                    self.robot.set_right_hand_pose(position, orientation)
+```
+
+## Haptic Feedback
+
+### Force Feedback
+
+Operator feels forces the robot encounters:
+
+```python
+class HapticDevice:
+    def __init__(self, device_port='/dev/ttyUSB0'):
+        self.device = serial.Serial(device_port, 115200)
+
+    def send_force(self, fx, fy, fz):
+        """Send force vector to haptic device."""
+        # Scale to device range (0-255 per axis)
+        fx_scaled = int(np.clip((fx + 10) / 20 * 255, 0, 255))
+        fy_scaled = int(np.clip((fy + 10) / 20 * 255, 0, 255))
+        fz_scaled = int(np.clip((fz + 10) / 20 * 255, 0, 255))
+
+        command = bytes([fx_scaled, fy_scaled, fz_scaled])
+        self.device.write(command)
+
+class TeleopWithHaptics:
+    def __init__(self, robot, haptic_device):
+        self.robot = robot
+        self.haptics = haptic_device
+
+    def control_loop(self):
+        """Teleoperation with force feedback."""
+        while True:
+            # Get robot end-effector forces
+            forces = self.robot.get_end_effector_forces()
+
+            # Send to operator
+            self.haptics.send_force(forces.x, forces.y, forces.z)
+
+            # Get operator input
+            operator_command = self.haptics.get_position()
+            self.robot.set_end_effector_target(operator_command)
+
+            time.sleep(0.01)  # 100 Hz for haptics
+```
+
+## Handling Latency
+
+### Predictive Display
+
+Show predicted robot state to compensate for delay:
+
+```python
+class PredictiveDisplay:
+    def __init__(self, robot, network_delay=0.5):
+        self.robot = robot
+        self.delay = network_delay
+        self.predictor = RobotStatePredictor()
+
+    def display_loop(self):
+        """Display predicted robot state."""
+        while True:
+            # Current state
+            current_state = self.robot.get_state()
+
+            # Predict future state
+            predicted_state = self.predictor.predict(
+                current_state,
+                lookahead=self.delay
+            )
+
+            # Render predicted state
+            self.render(predicted_state)
+            time.sleep(0.033)  # 30 Hz display
+```
+
+### Move-and-Wait Strategy
+
+Operator sends command, waits for confirmation:
+
+```python
+def move_and_wait_control(robot, target, timeout=5.0):
+    """Send command and wait for execution confirmation."""
+    command_id = robot.send_command(target)
+
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        status = robot.get_command_status(command_id)
+        if status == 'completed':
+            return True
+        elif status == 'failed':
+            return False
+        time.sleep(0.1)
+
+    return False  # Timeout
+```
+
+## Shared Autonomy Strategies
+
+### Obstacle Avoidance Assistance
+
+Robot prevents collisions while following operator input:
+
+```python
+def shared_autonomy_navigation(operator_cmd, robot_sensors):
+    """Blend operator command with collision avoidance."""
+    # Check for obstacles
+    obstacles = detect_obstacles(robot_sensors)
+
+    if obstacles:
+        # Compute avoidance vector
+        avoidance_cmd = compute_avoidance(obstacles, operator_cmd)
+
+        # Blend: prioritize avoidance near obstacles
+        danger_level = compute_danger(obstacles)
+        alpha = 1.0 - danger_level  # Reduce operator authority when danger
+
+high
+        blended_cmd = alpha * operator_cmd + (1 - alpha) * avoidance_cmd
+        return blended_cmd
+    else:
+        return operator_cmd
+```
+
+### Snap-to-Target Assistance
+
+Robot snaps gripper to likely grasp poses:
+
+```python
+def assisted_grasping(operator_target, scene_objects):
+    """Snap to nearby graspable objects."""
+    # Find nearest object
+    nearest = find_nearest_object(operator_target, scene_objects)
+
+    if distance(operator_target, nearest) < 0.1:  # 10cm threshold
+        # Snap to optimal grasp pose
+        grasp_pose = compute_grasp_pose(nearest)
+        return grasp_pose
+    else:
+        return operator_target
+```
+
+## Evaluation Metrics
+
+- **Task Completion Time**: Time to complete teleoperated task
+- **Error Rate**: Collisions, dropped objects
+- **Operator Workload**: NASA-TLX questionnaire
+- **Situation Awareness**: Understanding of robot state
+- **Latency Tolerance**: Maximum acceptable delay
+
+## Key Takeaways
+
+- Teleoperation enables remote robot control for hazardous or distant environments
+- Architectures range from direct control to supervisory and shared autonomy
+- Interfaces include joysticks, motion capture, VR headsets, and haptic devices
+- Latency challenges require predictive displays and adaptive control strategies
+- Shared autonomy blends operator input with autonomous assistance
+- Haptic feedback enhances operator situational awareness
+- VR provides immersive first-person robot control
+
+## What's Next?
+
+Part VIII explores **Deployment & Applications**, covering industrial robotics, service domains, hardware design, and production systems for real-world humanoid deployment.
+
+### Further Resources
+
+- **Hardware**: Omega/Phantom haptic devices, HTC Vive/Oculus for VR
+- **Software**: ROS teleop packages, Unity for VR interfaces
+- **Papers**: "A Survey of Teleoperation" (multiple), shared autonomy research
+- **Standards**: ISO 9787 (Manipulating robots - Performance criteria)

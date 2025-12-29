@@ -1,0 +1,12 @@
+{
+  "label": "Part III: Simulation",
+  "position": 3,
+  "collapsible": true,
+  "collapsed": true,
+  "link": {
+    "type": "generated-index",
+    "title": "Part III: Simulation & Visualization",
+    "description": "Learn industry-standard simulation tools including Gazebo, Unity, and NVIDIA Isaac Sim for robotic development.",
+    "slug": "/part-03-simulation"
+  }
+}

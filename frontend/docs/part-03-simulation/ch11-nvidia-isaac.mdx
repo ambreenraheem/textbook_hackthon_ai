@@ -1,0 +1,1157 @@
+---
+id: ch11-nvidia-isaac
+title: Chapter 11 - NVIDIA Isaac Sim
+description: Leverage NVIDIA Isaac Sim for photorealistic simulation and synthetic data generation.
+sidebar_label: Ch 11. NVIDIA Isaac Sim
+sidebar_position: 3
+keywords: [NVIDIA Isaac, Isaac Sim, photorealistic simulation, synthetic data]
+difficulty: advanced
+estimatedReadingTime: 30
+---
+
+# Chapter 11: NVIDIA Isaac Sim
+
+## Learning Objectives
+
+By the end of this chapter, you will be able to:
+- Set up NVIDIA Isaac Sim
+- Create photorealistic simulation environments
+- Generate synthetic data for ML training
+- Integrate Isaac Sim with ROS 2 and Python
+
+## Introduction
+
+NVIDIA Isaac Sim represents the cutting edge of robotics simulation, built on NVIDIA Omniverse—a platform for real-time 3D collaboration and physically accurate simulation. Isaac Sim combines photorealistic ray-traced rendering, high-fidelity PhysX 5 physics, and deep integration with AI frameworks to create the most advanced robotics simulation environment available today.
+
+What sets Isaac Sim apart is its focus on bridging the sim-to-real gap through photorealism, accurate physics, and synthetic data generation at scale. It's particularly powerful for perception-heavy applications, large-scale reinforcement learning through Isaac Gym, and scenarios requiring collaboration between teams using different tools through the Omniverse ecosystem.
+
+### Why Choose NVIDIA Isaac Sim?
+
+**Key Advantages:**
+- **Photorealistic rendering**: Ray-traced graphics (RTX) indistinguishable from reality
+- **PhysX 5**: Industry-leading GPU-accelerated physics simulation
+- **Massive parallelization**: Train thousands of robots simultaneously with Isaac Gym
+- **Synthetic data generation**: Generate millions of labeled images with perfect ground truth
+- **Domain randomization**: Built-in tools for robust sim-to-real transfer
+- **ROS 2 native**: Seamless integration without bridges
+- **Isaac ROS**: Accelerated perception algorithms on NVIDIA hardware
+- **USD format**: Universal Scene Description for interoperability
+
+**When to Choose Isaac Sim:**
+- Photorealistic rendering is critical (computer vision, human perception studies)
+- Large-scale reinforcement learning (>100 parallel environments)
+- Synthetic data generation for deep learning
+- Teams using NVIDIA hardware (RTX GPUs, Jetson robots)
+- Production pipelines requiring Omniverse integration
+- High-stakes applications where sim-to-real accuracy is paramount
+
+**Comparison with Other Simulators:**
+
+| Feature | Isaac Sim | Unity | Gazebo |
+|---------|-----------|-------|--------|
+| **Rendering** | RTX ray-tracing | Rasterization (HDRP) | Rasterization (Ogre) |
+| **Physics** | PhysX 5 (GPU) | PhysX (CPU/GPU) | ODE/DART/Bullet |
+| **Parallel Training** | Isaac Gym (1000s) | Limited | Limited |
+| **ROS 2 Integration** | Native | TCP Bridge | Native |
+| **Cost** | Free (limitations) | Free/Paid | Free |
+| **Hardware Requirement** | RTX GPU (NVIDIA) | Any GPU | Any GPU |
+| **Learning Curve** | Steep | Moderate | Moderate |
+
+## Installation and Setup
+
+### System Requirements
+
+**Minimum:**
+- NVIDIA RTX GPU (2060 or higher)
+- 32 GB RAM
+- Ubuntu 20.04/22.04 or Windows 10/11
+- 50 GB disk space
+
+**Recommended:**
+- NVIDIA RTX 3080/4080 or higher
+- 64 GB RAM
+- NVMe SSD
+- Multi-core CPU (8+ cores)
+
+### Installing Isaac Sim
+
+**Method 1: Omniverse Launcher (Easiest)**
+
+```bash
+# 1. Download NVIDIA Omniverse Launcher
+wget https://install.launcher.omniverse.nvidia.com/installers/omniverse-launcher-linux.AppImage
+
+# 2. Make executable and run
+chmod +x omniverse-launcher-linux.AppImage
+./omniverse-launcher-linux.AppImage
+
+# 3. In Launcher:
+# - Go to Exchange tab
+# - Search "Isaac Sim"
+# - Click Install (version 2023.1.1 or latest)
+```
+
+**Method 2: Docker (For Headless Training)**
+
+```bash
+# Pull Isaac Sim container
+docker pull nvcr.io/nvidia/isaac-sim:2023.1.1
+
+# Run container
+docker run --name isaac-sim --entrypoint bash -it --gpus all \
+  -e "ACCEPT_EULA=Y" --rm --network=host \
+  -v ~/docker/isaac-sim/cache/kit:/isaac-sim/kit/cache:rw \
+  -v ~/docker/isaac-sim/cache/ov:/root/.cache/ov:rw \
+  -v ~/docker/isaac-sim/cache/pip:/root/.cache/pip:rw \
+  -v ~/docker/isaac-sim/cache/glcache:/root/.cache/nvidia/GLCache:rw \
+  -v ~/docker/isaac-sim/cache/computecache:/root/.nv/ComputeCache:rw \
+  -v ~/docker/isaac-sim/logs:/root/.nvidia-omniverse/logs:rw \
+  -v ~/docker/isaac-sim/data:/root/.local/share/ov/data:rw \
+  -v ~/isaac-sim-projects:/isaac-sim/projects:rw \
+  nvcr.io/nvidia/isaac-sim:2023.1.1
+```
+
+### Installing Isaac ROS (for ROS 2 Integration)
+
+```bash
+# Create workspace
+mkdir -p ~/isaac_ros_ws/src
+cd ~/isaac_ros_ws/src
+
+# Clone Isaac ROS packages
+git clone https://github.com/NVIDIA-ISAAC-ROS/isaac_ros_common.git
+git clone https://github.com/NVIDIA-ISAAC-ROS/isaac_ros_visual_slam.git
+git clone https://github.com/NVIDIA-ISAAC-ROS/isaac_ros_dnn_inference.git
+
+# Build
+cd ~/isaac_ros_ws
+colcon build
+source install/setup.bash
+```
+
+### Verifying Installation
+
+**Launch Isaac Sim:**
+
+```bash
+# Via Omniverse Launcher: Click "Launch" button
+
+# Or via command line:
+~/.local/share/ov/pkg/isaac_sim-2023.1.1/isaac-sim.sh
+
+# Headless mode (for training):
+~/.local/share/ov/pkg/isaac_sim-2023.1.1/isaac-sim.sh --headless
+```
+
+**Test Python API:**
+
+```python
+from omni.isaac.kit import SimulationApp
+simulation_app = SimulationApp({"headless": False})
+
+from omni.isaac.core import World
+from omni.isaac.core.objects import DynamicCuboid
+
+world = World()
+world.scene.add_default_ground_plane()
+
+cube = world.scene.add(
+    DynamicCuboid(
+        prim_path="/World/Cube",
+        name="cube",
+        position=[0, 0, 1.0],
+        scale=[0.5, 0.5, 0.5],
+        color=[0.0, 0.0, 1.0]
+    )
+)
+
+world.reset()
+for i in range(1000):
+    world.step(render=True)
+
+simulation_app.close()
+```
+
+## Understanding USD Format
+
+Universal Scene Description (USD) is the file format used by Isaac Sim and the broader Omniverse ecosystem.
+
+### USD Hierarchy
+
+```
+Stage (root)
+├── World (Xform)
+│   ├── GroundPlane (Mesh)
+│   ├── Lighting (DomeLight)
+│   └── Robot (Articulation Root)
+│       ├── base_link (RigidBody)
+│       ├── joint1 (RevoluteJoint)
+│       ├── link1 (RigidBody)
+│       └── Camera (Camera)
+```
+
+### Creating USD Scene Programmatically
+
+```python
+from pxr import Usd, UsdGeom, UsdPhysics, Gf
+
+# Create stage
+stage = Usd.Stage.CreateNew("my_scene.usd")
+
+# Create World xform
+world = UsdGeom.Xform.Define(stage, "/World")
+
+# Add ground plane
+ground = UsdGeom.Mesh.Define(stage, "/World/GroundPlane")
+ground.CreatePointsAttr([
+    (-10, 0, -10), (10, 0, -10),
+    (10, 0, 10), (-10, 0, 10)
+])
+ground.CreateFaceVertexCountsAttr([4])
+ground.CreateFaceVertexIndicesAttr([0, 1, 2, 3])
+ground.CreateExtentAttr([(-10, 0, -10), (10, 0, 10)])
+
+# Make it collidable
+UsdPhysics.CollisionAPI.Apply(ground.GetPrim())
+physx_collision_api = PhysxSchema.PhysxCollisionAPI.Apply(ground.GetPrim())
+
+# Set material
+material = UsdShade.Material.Define(stage, "/World/Materials/GroundMaterial")
+shader = UsdShade.Shader.Define(stage, "/World/Materials/GroundMaterial/Shader")
+shader.CreateIdAttr("UsdPreviewSurface")
+shader.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set((0.5, 0.5, 0.5))
+
+# Save stage
+stage.Save()
+```
+
+### Importing URDF to USD
+
+```python
+from omni.isaac.core.utils.extensions import enable_extension
+enable_extension("omni.isaac.urdf")
+
+from omni.isaac.urdf import _urdf
+
+# Import URDF
+urdf_interface = _urdf.acquire_urdf_interface()
+urdf_path = "/path/to/robot.urdf"
+dest_path = "/World/Robot"
+
+import_config = _urdf.ImportConfig()
+import_config.merge_fixed_joints = False
+import_config.convex_decomp = True
+import_config.import_inertia_tensor = True
+import_config.fix_base = False
+
+success, prim_path = urdf_interface.parse_urdf(
+    urdf_path, dest_path, import_config
+)
+
+if success:
+    print(f"Robot imported to {prim_path}")
+```
+
+## Physics Simulation with PhysX 5
+
+Isaac Sim uses PhysX 5, offering GPU-accelerated physics for massive parallelization.
+
+### Configuring Physics Scene
+
+```python
+from omni.isaac.core import World
+from omni.isaac.core.utils.stage import add_reference_to_stage
+import omni.physx.scripts.utils as physx_utils
+
+world = World(stage_units_in_meters=1.0)
+
+# Configure physics scene
+scene = world.get_physics_context()
+scene.set_gravity(value=-9.81)  # Z-up coordinate system
+scene.set_solver_type("TGS")     # Temporal Gauss-Seidel (default)
+
+# Enable GPU dynamics (for parallel simulation)
+scene.enable_gpu_dynamics(flag=True)
+scene.enable_flatcache(flag=True)  # Required for GPU
+
+# Set simulation parameters
+scene.set_physics_dt(1.0/60.0)  # 60 Hz physics
+scene.set_rendering_dt(1.0/60.0)  # 60 Hz rendering
+```
+
+### Articulation Configuration
+
+For humanoid robots, proper articulation setup is critical:
+
+```python
+from omni.isaac.core.articulations import Articulation
+from omni.isaac.core.utils.types import ArticulationAction
+
+# Load robot
+robot = world.scene.add(
+    Articulation(
+        prim_path="/World/Humanoid",
+        name="humanoid"
+    )
+)
+
+# Initialize
+world.reset()
+
+# Get joint information
+print(f"DOF: {robot.num_dof}")
+print(f"Joints: {robot.dof_names}")
+
+# Set joint positions (PD control)
+action = ArticulationAction(
+    joint_positions=[0.0] * robot.num_dof,
+    joint_velocities=[0.0] * robot.num_dof,
+    joint_efforts=[0.0] * robot.num_dof
+)
+robot.apply_action(action)
+
+# Get joint states
+positions, velocities = robot.get_joint_positions(), robot.get_joint_velocities()
+```
+
+### Contact and Force Sensors
+
+```python
+from omni.isaac.core.utils.prims import create_prim
+from pxr import UsdPhysics, PhysxSchema
+
+# Add contact sensor to foot
+foot_prim_path = "/World/Humanoid/right_foot"
+foot_prim = stage.GetPrimAtPath(foot_prim_path)
+
+# Enable contact reporting
+contact_report_api = PhysxSchema.PhysxContactReportAPI.Apply(foot_prim)
+contact_report_api.CreateThresholdAttr(0.1)  # Force threshold (N)
+
+# Read contact forces (in simulation loop)
+from omni.isaac.core.utils.extensions import get_extension_path_from_name
+import omni.physx as _physx
+
+contact_headers, contact_data = _physx.get_physx_contact_report_interface().get_contact_report()
+
+for contact in contact_data:
+    if contact.actor_path == foot_prim_path:
+        print(f"Contact force: {contact.impulse}")
+```
+
+## Sensor Simulation
+
+### RGB Camera
+
+```python
+from omni.isaac.core.utils.prims import create_prim
+from omni.isaac.sensor import Camera
+import numpy as np
+
+# Create camera
+camera = Camera(
+    prim_path="/World/Humanoid/head/camera",
+    position=[0.1, 0, 0.05],
+    frequency=30,  # 30 Hz
+    resolution=(1280, 720),
+    orientation=[0, 0, 0, 1]  # Quaternion
+)
+
+# Initialize
+camera.initialize()
+
+# Capture RGB image
+rgb = camera.get_rgba()[:, :, :3]  # Drop alpha channel
+print(f"Image shape: {rgb.shape}")  # (720, 1280, 3)
+```
+
+### Depth Camera
+
+```python
+from omni.isaac.sensor import Camera
+
+depth_camera = Camera(
+    prim_path="/World/Humanoid/head/depth_camera",
+    position=[0.1, 0, 0.05],
+    frequency=30,
+    resolution=(640, 480)
+)
+
+depth_camera.initialize()
+depth_camera.add_distance_to_camera_to_frame()  # Enable depth
+
+# Get depth data
+depth = depth_camera.get_current_frame()["distance_to_camera"]
+print(f"Depth range: {depth.min():.2f}m to {depth.max():.2f}m")
+```
+
+### LiDAR Sensor
+
+```python
+from omni.isaac.range_sensor import _range_sensor
+
+# Create rotating LiDAR
+result, lidar_prim = omni.kit.commands.execute(
+    "RangeSensorCreateLidar",
+    path="/World/Humanoid/lidar",
+    parent="/World/Humanoid/base_link",
+    min_range=0.4,
+    max_range=100.0,
+    draw_points=True,
+    draw_lines=False,
+    horizontal_fov=360.0,
+    vertical_fov=30.0,
+    horizontal_resolution=0.4,
+    vertical_resolution=4.0,
+    rotation_rate=20.0,
+    high_lod=False,
+    yaw_offset=0.0,
+    enable_semantics=False
+)
+
+# Access LiDAR interface
+lidar_interface = _range_sensor.acquire_lidar_sensor_interface()
+
+# In simulation loop, get point cloud
+depth_data = lidar_interface.get_linear_depth_data("/World/Humanoid/lidar")
+point_cloud = depth_data.reshape(-1, 3)  # (N, 3) XYZ points
+```
+
+### IMU Sensor
+
+```python
+from omni.isaac.sensor import IMUSensor
+
+imu = IMUSensor(
+    prim_path="/World/Humanoid/base_link/imu",
+    name="imu_sensor",
+    frequency=100,  # 100 Hz
+    translation=[0, 0, 0],
+    orientation=[0, 0, 0, 1]
+)
+
+imu.initialize()
+
+# In simulation loop
+imu_data = imu.get_current_frame()
+linear_acc = imu_data["lin_acc"]        # Linear acceleration (m/s²)
+angular_vel = imu_data["ang_vel"]       # Angular velocity (rad/s)
+orientation = imu_data["orientation"]   # Quaternion
+```
+
+## ROS 2 Integration
+
+Isaac Sim provides native ROS 2 support through the ROS 2 Bridge extension.
+
+### Enabling ROS 2 Bridge
+
+```python
+from omni.isaac.core.utils.extensions import enable_extension
+
+# Enable ROS 2 bridge
+enable_extension("omni.isaac.ros2_bridge")
+
+# In USD, enable ROS 2 on specific topics
+import omni.graph.core as og
+
+# Create ROS 2 publisher graph
+keys = og.Controller.Keys
+(graph, nodes, _, _) = og.Controller.edit(
+    {"graph_path": "/World/ROS_Graph", "evaluator_name": "execution"},
+    {
+        keys.CREATE_NODES: [
+            ("OnPlaybackTick", "omni.graph.action.OnPlaybackTick"),
+            ("ReadSimTime", "omni.isaac.core_nodes.IsaacReadSimulationTime"),
+            ("Context", "omni.isaac.ros2_bridge.ROS2Context"),
+            ("PublishClock", "omni.isaac.ros2_bridge.ROS2PublishClock"),
+        ],
+        keys.CONNECT: [
+            ("OnPlaybackTick.outputs:tick", "PublishClock.inputs:execIn"),
+            ("Context.outputs:context", "PublishClock.inputs:context"),
+            ("ReadSimTime.outputs:simulationTime", "PublishClock.inputs:timeStamp"),
+        ],
+    },
+)
+```
+
+### Publishing Joint States
+
+```python
+# Create joint state publisher via script
+from omni.isaac.core_nodes.scripts.utils import set_target_prims
+
+# Create ROS 2 publisher node for joint states
+keys = og.Controller.Keys
+graph_path = "/World/ROS_JointState_Graph"
+
+(graph, nodes, _, _) = og.Controller.edit(
+    {"graph_path": graph_path, "evaluator_name": "execution"},
+    {
+        keys.CREATE_NODES: [
+            ("OnPlaybackTick", "omni.graph.action.OnPlaybackTick"),
+            ("ReadRobotJoints", "omni.isaac.core_nodes.IsaacArticulationController"),
+            ("PublishJointState", "omni.isaac.ros2_bridge.ROS2PublishJointState"),
+            ("Context", "omni.isaac.ros2_bridge.ROS2Context"),
+        ],
+        keys.SET_VALUES: [
+            ("PublishJointState.inputs:topicName", "/joint_states"),
+        ],
+        keys.CONNECT: [
+            ("OnPlaybackTick.outputs:tick", "PublishJointState.inputs:execIn"),
+            ("Context.outputs:context", "PublishJointState.inputs:context"),
+            ("ReadRobotJoints.outputs:jointNames", "PublishJointState.inputs:jointNames"),
+            ("ReadRobotJoints.outputs:positionCommand", "PublishJointState.inputs:positionCommand"),
+            ("ReadRobotJoints.outputs:velocityCommand", "PublishJointState.inputs:velocityCommand"),
+            ("ReadRobotJoints.outputs:effortCommand", "PublishJointState.inputs:effortCommand"),
+        ],
+    },
+)
+
+# Set target robot
+set_target_prims(
+    primPath="/World/ROS_JointState_Graph/ReadRobotJoints",
+    targetPrimPaths=["/World/Humanoid"]
+)
+```
+
+### Subscribing to Commands
+
+```python
+# Subscribe to velocity commands
+keys = og.Controller.Keys
+(graph, nodes, _, _) = og.Controller.edit(
+    {"graph_path": "/World/ROS_CmdVel_Graph", "evaluator_name": "execution"},
+    {
+        keys.CREATE_NODES: [
+            ("OnPlaybackTick", "omni.graph.action.OnPlaybackTick"),
+            ("SubscribeTwist", "omni.isaac.ros2_bridge.ROS2SubscribeTwist"),
+            ("ScaleToVelocity", "omni.graph.nodes.Multiply"),
+            ("ArticulationController", "omni.isaac.core_nodes.IsaacArticulationController"),
+            ("Context", "omni.isaac.ros2_bridge.ROS2Context"),
+        ],
+        keys.SET_VALUES: [
+            ("SubscribeTwist.inputs:topicName", "/cmd_vel"),
+        ],
+        keys.CONNECT: [
+            ("OnPlaybackTick.outputs:tick", "SubscribeTwist.inputs:execIn"),
+            ("Context.outputs:context", "SubscribeTwist.inputs:context"),
+            ("SubscribeTwist.outputs:linearVelocity", "ScaleToVelocity.inputs:a"),
+            ("ScaleToVelocity.outputs:product", "ArticulationController.inputs:velocityCommand"),
+        ],
+    },
+)
+```
+
+## Synthetic Data Generation
+
+Isaac Sim's Replicator API enables large-scale synthetic data generation with perfect labels.
+
+### Basic Replicator Workflow
+
+```python
+import omni.replicator.core as rep
+
+# Define camera
+camera = rep.create.camera(position=(5, 5, 5), look_at=(0, 0, 0))
+
+# Define render products
+rp = rep.create.render_product(camera, (1024, 1024))
+
+# Define randomization
+def randomize_scene():
+    # Randomize lighting
+    lights = rep.get.prims(semantics=[("class", "light")])
+    with lights:
+        rep.modify.attribute("intensity", rep.distribution.uniform(1000, 10000))
+        rep.modify.attribute("color", rep.distribution.uniform((0.5, 0.5, 0.5), (1, 1, 1)))
+
+    # Randomize object poses
+    objects = rep.get.prims(semantics=[("class", "object")])
+    with objects:
+        rep.modify.pose(
+            position=rep.distribution.uniform((-2, -2, 0), (2, 2, 2)),
+            rotation=rep.distribution.uniform((0, 0, 0), (360, 360, 360))
+        )
+
+    return True
+
+# Register randomization
+rep.randomizer.register(randomize_scene)
+
+# Attach writers (data exporters)
+writer = rep.WriterRegistry.get("BasicWriter")
+writer.initialize(
+    output_dir="~/isaac_sim_data",
+    rgb=True,
+    bounding_box_2d_tight=True,
+    semantic_segmentation=True,
+    instance_segmentation=True,
+    distance_to_camera=True
+)
+writer.attach([rp])
+
+# Run generation
+rep.orchestrator.run_until_complete(num_frames=10000)
+```
+
+### Domain Randomization for Sim-to-Real
+
+```python
+import omni.replicator.core as rep
+
+# Randomize materials
+def randomize_materials():
+    objects = rep.get.prims(path_pattern="/World/Objects/*")
+    with objects:
+        rep.randomizer.materials(
+            materials=rep.get.prims(semantics=[("class", "material")]),
+            project_uvw=True
+        )
+    return True
+
+# Randomize backgrounds
+def randomize_backgrounds():
+    dome_light = rep.get.prims(path_pattern="/World/Lights/DomeLight")
+    textures = [
+        "omniverse://localhost/NVIDIA/Assets/Skies/Clear/qwantani_1k.hdr",
+        "omniverse://localhost/NVIDIA/Assets/Skies/Cloudy/kloofendal_48d_partly_cloudy_1k.hdr",
+        "omniverse://localhost/NVIDIA/Assets/Skies/Indoor/studio_small_05_1k.hdr"
+    ]
+    with dome_light:
+        rep.modify.attribute("texture:file", rep.distribution.choice(textures))
+    return True
+
+# Randomize camera parameters
+def randomize_camera():
+    camera = rep.get.prims(semantics=[("class", "camera")])
+    with camera:
+        rep.modify.attribute("focalLength", rep.distribution.uniform(18, 85))
+        rep.modify.attribute("fStop", rep.distribution.uniform(1.4, 22))
+    return True
+
+# Register all randomizers
+rep.randomizer.register(randomize_materials)
+rep.randomizer.register(randomize_backgrounds)
+rep.randomizer.register(randomize_camera)
+
+# Trigger randomization on each frame
+with rep.trigger.on_frame():
+    rep.randomizer.randomize_materials()
+    rep.randomizer.randomize_backgrounds()
+    rep.randomizer.randomize_camera()
+```
+
+## Isaac Gym for Reinforcement Learning
+
+Isaac Gym enables training thousands of robots in parallel on a single GPU.
+
+### Setting Up Isaac Gym Environment
+
+```python
+from omni.isaac.gym.vec_env import VecEnvBase
+import torch
+import numpy as np
+
+class HumanoidLocomotionEnv(VecEnvBase):
+    def __init__(self, headless, sim_device=0, enable_livestream=False, enable_viewport=False):
+        self.num_envs = 4096  # Train 4096 robots in parallel!
+        self.num_obs = 51  # Observation space size
+        self.num_actions = 12  # Action space size (12 joints)
+
+        # Call parent constructor
+        super().__init__(
+            headless=headless,
+            sim_device=sim_device,
+            enable_livestream=enable_livestream,
+            enable_viewport=enable_viewport
+        )
+
+    def set_up_scene(self, scene):
+        from omni.isaac.core.utils.stage import add_reference_to_stage
+        import omni.isaac.core.utils.nucleus as nucleus
+
+        # Create environments in grid
+        env_spacing = 4.0
+        num_per_row = int(np.sqrt(self.num_envs))
+
+        for i in range(self.num_envs):
+            env_path = f"/World/Env_{i}"
+
+            # Calculate position
+            x = (i % num_per_row) * env_spacing
+            y = (i // num_per_row) * env_spacing
+
+            # Add ground plane
+            scene.add_default_ground_plane(
+                z_position=0,
+                prim_path=f"{env_path}/ground"
+            )
+
+            # Add robot
+            robot_asset_path = nucleus.get_assets_root_path() + "/Isaac/Robots/Humanoid/humanoid.usd"
+            add_reference_to_stage(robot_asset_path, f"{env_path}/Robot")
+
+            # Set position
+            from omni.isaac.core.utils.prims import get_prim_at_path
+            robot_prim = get_prim_at_path(f"{env_path}/Robot")
+            robot_prim.GetAttribute("xformOp:translate").Set((x, y, 1.0))
+
+    def get_observations(self):
+        # Collect observations from all robots (GPU-accelerated)
+        observations = torch.zeros((self.num_envs, self.num_obs), device=self._device)
+
+        # Get robot states (positions, velocities, orientations)
+        # This is done efficiently on GPU using PhysX tensor API
+
+        return {"obs": observations}
+
+    def pre_physics_step(self, actions):
+        # Apply actions to all robots
+        # actions shape: (num_envs, num_actions)
+
+        # Set joint targets via GPU tensor API
+        pass
+
+    def post_physics_step(self):
+        # Calculate rewards
+        self.rew_buf[:] = self.compute_rewards()
+
+        # Check for episode termination
+        self.reset_buf[:] = self.compute_resets()
+
+    def compute_rewards(self):
+        # Vectorized reward calculation for all environments
+        rewards = torch.zeros(self.num_envs, device=self._device)
+
+        # Example: reward for staying upright
+        # rewards += upright_bonus
+
+        return rewards
+
+    def compute_resets(self):
+        # Determine which environments need reset
+        resets = torch.zeros(self.num_envs, dtype=torch.bool, device=self._device)
+
+        # Example: reset if robot falls
+        # resets |= (robot_height < 0.3)
+
+        return resets
+```
+
+### Training with RL Libraries
+
+**RL Games Integration:**
+
+```python
+from rl_games.torch_runner import Runner
+from rl_games.algos_torch import torch_ext
+import yaml
+
+# Configuration
+config = {
+    "params": {
+        "seed": 42,
+        "algo": {
+            "name": "a2c_continuous"
+        },
+        "model": {
+            "name": "continuous_a2c_logstd"
+        },
+        "network": {
+            "name": "actor_critic",
+            "separate": False,
+            "space": {
+                "continuous": {
+                    "mu_activation": "None",
+                    "sigma_activation": "None",
+                    "mu_init": {
+                        "name": "default"
+                    },
+                    "sigma_init": {
+                        "name": "const_initializer",
+                        "val": 0
+                    },
+                    "fixed_sigma": True
+                }
+            },
+            "mlp": {
+                "units": [512, 256, 128],
+                "activation": "elu",
+                "d2rl": False,
+                "initializer": {
+                    "name": "default"
+                },
+                "regularizer": {
+                    "name": "None"
+                }
+            }
+        },
+        "config": {
+            "name": "HumanoidLocomotion",
+            "env_name": "rlgpu",
+            "multi_gpu": False,
+            "mixed_precision": True,
+            "normalize_input": True,
+            "normalize_value": True,
+            "num_actors": 4096,
+            "reward_shaper": {
+                "scale_value": 0.01
+            },
+            "normalize_advantage": True,
+            "gamma": 0.99,
+            "tau": 0.95,
+            "learning_rate": 3e-4,
+            "lr_schedule": "adaptive",
+            "score_to_win": 20000,
+            "max_epochs": 10000,
+            "save_best_after": 50,
+            "save_frequency": 100,
+            "grad_norm": 1.0,
+            "entropy_coef": 0.0,
+            "truncate_grads": True,
+            "e_clip": 0.2,
+            "horizon_length": 16,
+            "minibatch_size": 32768,
+            "mini_epochs": 4,
+            "critic_coef": 2,
+            "clip_value": True,
+            "seq_length": 4,
+            "bounds_loss_coef": 0.0001
+        }
+    }
+}
+
+# Create runner
+runner = Runner()
+runner.load(config)
+runner.reset()
+
+# Train
+runner.run({
+    "train": True,
+    "play": False,
+    "checkpoint": None,
+    "sigma": None
+})
+```
+
+## Performance Optimization
+
+### GPU Acceleration
+
+```python
+from omni.isaac.core import World
+
+world = World()
+physics_ctx = world.get_physics_context()
+
+# Enable all GPU features
+physics_ctx.enable_gpu_dynamics(True)
+physics_ctx.enable_flatcache(True)  # Required for GPU dynamics
+
+# Set GPU buffer sizes
+physics_ctx.set_gpu_max_rigid_contact_count(512 * 1024)
+physics_ctx.set_gpu_max_rigid_patch_count(80 * 1024)
+physics_ctx.set_gpu_found_lost_pairs_capacity(1024)
+physics_ctx.set_gpu_found_lost_aggregate_pairs_capacity(1024)
+physics_ctx.set_gpu_total_aggregate_pairs_capacity(1024)
+physics_ctx.set_gpu_collision_stack_size(64 * 1024 * 1024)
+
+# Set solver parameters for performance
+physics_ctx.set_solver_type("TGS")
+physics_ctx.set_position_iteration_count(4)
+physics_ctx.set_velocity_iteration_count(1)
+```
+
+### Multi-GPU Training
+
+```python
+# Distribute environments across multiple GPUs
+import torch.distributed as dist
+
+def setup_distributed(rank, world_size):
+    dist.init_process_group("nccl", rank=rank, world_size=world_size)
+
+# Each GPU trains subset of environments
+num_gpus = 4
+envs_per_gpu = total_envs // num_gpus
+
+# In training script
+for gpu_id in range(num_gpus):
+    env = HumanoidEnv(
+        headless=True,
+        sim_device=gpu_id,
+        num_envs=envs_per_gpu
+    )
+```
+
+## Best Practices
+
+### 1. Asset Optimization
+
+- Use LODs for visual meshes
+- Simplify collision meshes (convex decomposition)
+- Enable GPU instancing for repeated objects
+- Use texture compression
+
+### 2. Physics Tuning
+
+```python
+# For humanoids, these settings work well:
+physics_ctx.set_gravity(-9.81)
+physics_ctx.set_physics_dt(1/60)  # 60 Hz
+physics_ctx.set_position_iteration_count(4)
+physics_ctx.set_velocity_iteration_count(1)
+
+# Joint damping (per joint)
+joint.set_drive_damping(50.0)
+joint.set_drive_stiffness(5000.0)
+joint.set_max_drive_force(500.0)
+```
+
+### 3. Synthetic Data Quality
+
+- Use ray-traced rendering (RTX) for photorealism
+- Apply proper materials with PBR textures
+- Randomize lighting extensively
+- Vary camera parameters (FOV, exposure, focus)
+- Include occlusions and clutter
+
+### 4. Sim-to-Real Transfer
+
+- Domain randomization is crucial
+- Match sensor noise to real hardware
+- Test with degraded conditions (blur, motion, lighting)
+- Validate physics parameters against real measurements
+
+## Common Pitfalls
+
+### 1. GPU Memory Issues
+
+**Symptoms:** CUDA out-of-memory errors
+
+**Solutions:**
+```python
+# Reduce number of parallel environments
+num_envs = 2048  # Instead of 4096
+
+# Reduce render resolution
+camera.set_resolution((640, 480))  # Instead of 1920x1080
+
+# Disable unnecessary sensors
+camera.enable_semantic_segmentation(False)
+```
+
+### 2. Slow Simulation
+
+**Symptoms:** Low FPS, high step time
+
+**Solutions:**
+- Enable GPU dynamics and flatcache
+- Reduce physics substeps
+- Simplify collision meshes
+- Disable rendering during training
+
+### 3. Unstable Physics
+
+**Symptoms:** Robots exploding, jittering
+
+**Solutions:**
+```python
+# Increase solver iterations
+physics_ctx.set_position_iteration_count(8)  # Default: 4
+
+# Reduce joint stiffness
+joint.set_drive_stiffness(1000)  # Instead of 10000
+
+# Enable stabilization
+joint.set_drive_enable_stabilization(True)
+```
+
+## Complete Example: Humanoid Obstacle Navigation
+
+```python
+from omni.isaac.kit import SimulationApp
+simulation_app = SimulationApp({"headless": False})
+
+from omni.isaac.core import World
+from omni.isaac.core.articulations import Articulation
+from omni.isaac.core.utils.types import ArticulationAction
+from omni.isaac.core.utils.stage import add_reference_to_stage
+import omni.isaac.core.utils.nucleus as nucleus
+import numpy as np
+
+# Create world
+world = World(stage_units_in_meters=1.0)
+
+# Add ground
+world.scene.add_default_ground_plane()
+
+# Add humanoid robot
+robot_asset = nucleus.get_assets_root_path() + "/Isaac/Robots/Humanoid/humanoid.usd"
+add_reference_to_stage(robot_asset, "/World/Humanoid")
+
+robot = world.scene.add(
+    Articulation(
+        prim_path="/World/Humanoid",
+        name="humanoid"
+    )
+)
+
+# Add obstacles
+for i in range(5):
+    from omni.isaac.core.objects import DynamicCuboid
+    obstacle = world.scene.add(
+        DynamicCuboid(
+            prim_path=f"/World/Obstacle_{i}",
+            name=f"obstacle_{i}",
+            position=[np.random.uniform(-3, 3), np.random.uniform(-3, 3), 0.5],
+            scale=[0.3, 0.3, 1.0],
+            color=[1.0, 0.0, 0.0]
+        )
+    )
+
+# Add LiDAR
+result, lidar_prim = omni.kit.commands.execute(
+    "RangeSensorCreateLidar",
+    path="/World/Humanoid/lidar",
+    parent="/World/Humanoid/torso",
+    min_range=0.4,
+    max_range=10.0,
+    horizontal_fov=360.0,
+    vertical_fov=30.0,
+    horizontal_resolution=1.0,
+    vertical_resolution=4.0
+)
+
+# Initialize
+world.reset()
+
+# Simple obstacle avoidance controller
+def compute_control(robot_pose, lidar_data):
+    # Simplified: move forward unless obstacle detected
+    base_forward_velocity = 0.5
+
+    # Check for obstacles in front
+    front_sectors = lidar_data[80:100]  # Front 20 degrees
+    min_distance = np.min(front_sectors) if len(front_sectors) > 0 else 10.0
+
+    if min_distance < 2.0:
+        # Obstacle detected, turn
+        angular_velocity = 0.5
+        forward_velocity = 0.1
+    else:
+        # Clear path
+        angular_velocity = 0.0
+        forward_velocity = base_forward_velocity
+
+    return forward_velocity, angular_velocity
+
+# Simulation loop
+from omni.isaac.range_sensor import _range_sensor
+lidar_interface = _range_sensor.acquire_lidar_sensor_interface()
+
+for frame in range(10000):
+    # Get robot state
+    robot_position, robot_orientation = robot.get_world_pose()
+
+    # Get LiDAR data
+    depth_data = lidar_interface.get_linear_depth_data("/World/Humanoid/lidar")
+
+    # Compute control
+    fwd_vel, ang_vel = compute_control(robot_position, depth_data)
+
+    # Apply simple velocity-based control (simplified)
+    # In practice, use inverse kinematics for leg joints
+    action = ArticulationAction()
+    robot.apply_action(action)
+
+    # Step simulation
+    world.step(render=True)
+
+    if frame % 100 == 0:
+        print(f"Frame {frame}, Position: {robot_position}")
+
+simulation_app.close()
+```
+
+## Practice Exercises
+
+### Exercise 1: Photorealistic Data Generation
+
+**Task:** Generate 50,000 labeled images for humanoid detection
+
+**Requirements:**
+- Use Replicator for domain randomization
+- Randomize: lighting, materials, backgrounds, camera params
+- Export: RGB, bounding boxes, semantic segmentation, depth
+- Validate with object detection model (YOLOv8)
+
+### Exercise 2: Isaac Gym Locomotion
+
+**Task:** Train humanoid walking policy with 2048 parallel envs
+
+**Requirements:**
+- Implement vectorized environment
+- Use PPO or SAC algorithm
+- Reward: forward velocity, upright posture, energy efficiency
+- Train for 10M steps
+- Achieve stable walking at 0.5 m/s
+
+### Exercise 3: ROS 2 Integration
+
+**Task:** Control Isaac Sim humanoid from ROS 2 node
+
+**Requirements:**
+- Publish joint states at 100 Hz
+- Subscribe to joint commands
+- Publish camera and LiDAR data
+- Implement teleoperation node
+- Visualize in RViz2
+
+## Further Reading
+
+**Official Documentation:**
+- [Isaac Sim Documentation](https://docs.omniverse.nvidia.com/isaacsim/latest/)
+- [Isaac Gym Documentation](https://developer.nvidia.com/isaac-gym)
+- [USD Documentation](https://openusd.org/release/index.html)
+- [PhysX 5 SDK](https://nvidia-omniverse.github.io/PhysX/physx/5.1.1/)
+
+**Tutorials:**
+- [Isaac Sim Tutorials](https://docs.omniverse.nvidia.com/isaacsim/latest/tutorials.html)
+- [Replicator Tutorials](https://docs.omniverse.nvidia.com/extensions/latest/ext_replicator.html)
+- [Isaac ROS Tutorials](https://nvidia-isaac-ros.github.io/)
+
+**Research Papers:**
+- "Isaac Gym: High Performance GPU-Based Physics Simulation" (Makoviychuk et al., 2021)
+- "Physically Consistent Sim-to-Real Transfer" (NVIDIA, 2022)
+
+## Cross-References
+
+- **Chapter 3**: URDF models converted to USD
+- **Chapter 9**: Comparing with Gazebo simulation
+- **Chapter 10**: Comparing with Unity simulation
+- **Chapter 15**: Sim-to-real transfer with Isaac Sim
+- **Chapter 18**: RL training with Isaac Gym
+- **Chapter 20**: Computer vision with synthetic data
+
+## Next Steps
+
+After mastering Isaac Sim:
+
+1. **Deploy to real hardware** using sim-to-real techniques (Chapter 15)
+2. **Scale RL training** with distributed Isaac Gym
+3. **Generate production datasets** for computer vision models
+4. **Integrate Isaac ROS** for accelerated perception on Jetson
+5. **Collaborate via Omniverse** with teams using different tools
+
+**Recommended Projects:**
+- Large-scale dataset generation (1M+ images)
+- Humanoid locomotion across diverse terrains
+- Vision-based manipulation with domain randomization
+- Multi-robot collaboration scenarios
+- Real-time digital twin of physical robot
+
+:::tip Looking Ahead
+You've now learned the three major simulation platforms for robotics. In Part 4 (Chapters 12-15), we'll move beyond simulation to build complete robotic systems, integrating perception, planning, and control. Chapter 15 specifically addresses the critical challenge of transferring policies learned in simulation to real hardware—a key step in deploying your humanoid robots in the real world.
+:::

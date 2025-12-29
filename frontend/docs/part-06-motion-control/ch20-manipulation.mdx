@@ -1,0 +1,401 @@
+---
+id: ch20-manipulation
+title: Chapter 20 - Robotic Manipulation
+description: Master grasping, motion planning, and dexterous manipulation techniques.
+sidebar_label: Ch 20. Manipulation
+sidebar_position: 2
+keywords: [manipulation, grasping, motion planning, inverse kinematics]
+difficulty: advanced
+estimatedReadingTime: 35
+---
+
+# Chapter 20: Robotic Manipulation
+
+## Learning Objectives
+
+By the end of this chapter, you will be able to:
+- Plan robot arm trajectories
+- Implement grasping strategies
+- Solve inverse kinematics for manipulation
+- Perform dexterous manipulation tasks
+
+## Introduction
+
+Robotic manipulation—the ability to interact with and modify the physical environment—is fundamental to humanoid robotics. From picking up objects to assembling complex structures, manipulation requires coordinating perception, planning, and control to achieve precise, dexterous movements.
+
+## Manipulation Pipeline
+
+```
+Perception → Grasp Planning → Motion Planning → Execution → Feedback
+```
+
+**1. Perception**: Detect objects, estimate poses
+**2. Grasp Planning**: Determine how to grasp the object
+**3. Motion Planning**: Compute collision-free trajectory
+**4. Execution**: Control arm and gripper
+**5. Feedback**: Monitor grasp stability, adjust as needed
+
+## Grasping Fundamentals
+
+### Types of Grasps
+
+**Power Grasp**: Enveloping grasp for stability (e.g., grasping a hammer handle)
+**Precision Grasp**: Fingertip grasp for dexterity (e.g., picking up a coin)
+**Pinch Grasp**: Two-finger opposition (e.g., tweezers)
+
+### Grasp Quality Metrics
+
+**Force Closure**: Grasp can resist arbitrary external wrenches
+**Form Closure**: Object geometry alone prevents motion (no friction needed)
+
+**Ferrari-Canny Metric**: Measures resistance to worst-case disturbance wrench
+
+```python
+def compute_grasp_quality(contact_points, contact_normals, friction_coeff=0.5):
+    """Compute Ferrari-Canny grasp quality metric."""
+    # Build grasp wrench matrix
+    G = []
+    for point, normal in zip(contact_points, contact_normals):
+        # Force at contact point
+        wrench = compute_wrench(point, normal, friction_coeff)
+        G.append(wrench)
+
+    G = np.array(G).T  # [6 x num_contacts]
+
+    # Compute minimum singular value (worst-case resistance)
+    _, s, _ = np.linalg.svd(G)
+    quality = np.min(s)
+
+    return quality
+```
+
+## Grasp Planning Algorithms
+
+### Analytical Grasp Synthesis
+
+For simple grippers (parallel jaw), find antipodal grasp points:
+
+```python
+def plan_parallel_jaw_grasp(object_mesh, gripper_width):
+    """Find antipodal grasp for parallel jaw gripper."""
+    grasp_candidates = []
+
+    # Sample surface points
+    points = sample_surface_points(object_mesh, n=1000)
+
+    for i, p1 in enumerate(points):
+        n1 = object_mesh.get_normal(p1)
+
+        # Find opposite point along normal direction
+        p2 = raycast(object_mesh, p1, -n1)
+
+        if p2 is None:
+            continue
+
+        # Check gripper width constraint
+        distance = np.linalg.norm(p2 - p1)
+        if distance < gripper_width:
+            # Compute grasp pose (midpoint, aligned with normal)
+            grasp_pose = compute_grasp_pose(p1, p2, n1)
+            quality = evaluate_grasp(grasp_pose, object_mesh)
+            grasp_candidates.append((grasp_pose, quality))
+
+    # Return best grasp
+    grasp_candidates.sort(key=lambda x: x[1], reverse=True)
+    return grasp_candidates[0][0] if grasp_candidates else None
+```
+
+### Learning-Based Grasping
+
+**GraspNet**: Deep neural network trained on large grasp datasets
+
+```python
+import torch
+import torchvision.models as models
+
+class GraspCNN(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        # Pre-trained ResNet backbone
+        self.backbone = models.resnet50(pretrained=True)
+        self.backbone.fc = torch.nn.Linear(2048, 512)
+
+        # Grasp prediction head
+        self.grasp_head = torch.nn.Sequential(
+            torch.nn.Linear(512, 256),
+            torch.nn.ReLU(),
+            torch.nn.Linear(256, 5)  # [x, y, angle, width, quality]
+        )
+
+    def forward(self, rgb_image):
+        features = self.backbone(rgb_image)
+        grasp_params = self.grasp_head(features)
+        return grasp_params
+
+# Inference
+model = GraspCNN().eval()
+grasp = model(camera_image)
+x, y, angle, width, quality = grasp
+```
+
+## Motion Planning for Manipulation
+
+### Inverse Kinematics
+
+Given desired end-effector pose, compute joint angles:
+
+```python
+def inverse_kinematics(robot, target_pose, current_joints, max_iter=100):
+    """Iterative IK using Jacobian pseudo-inverse."""
+    q = current_joints.copy()
+
+    for _ in range(max_iter):
+        # Forward kinematics
+        current_pose = robot.forward_kinematics(q)
+
+        # Pose error
+        error = compute_pose_error(current_pose, target_pose)
+
+        if np.linalg.norm(error) < 0.001:  # Converged
+            return q, True
+
+        # Compute Jacobian
+        J = robot.compute_jacobian(q)
+
+        # Pseudo-inverse
+        J_pinv = np.linalg.pinv(J)
+
+        # Update joints
+        dq = J_pinv @ error
+        q += 0.1 * dq  # Step size
+
+    return q, False  # Did not converge
+```
+
+### Collision-Free Trajectory Planning
+
+**RRT (Rapidly-Exploring Random Tree)**:
+
+```python
+class RRT:
+    def __init__(self, start, goal, obstacle_checker, step_size=0.1):
+        self.start = start
+        self.goal = goal
+        self.obstacle_checker = obstacle_checker
+        self.step_size = step_size
+        self.tree = {0: (start, None)}  # node_id: (config, parent_id)
+
+    def plan(self, max_iterations=1000):
+        for i in range(max_iterations):
+            # Sample random configuration
+            if np.random.rand() < 0.1:  # Goal biasing
+                q_rand = self.goal
+            else:
+                q_rand = self.sample_random_config()
+
+            # Find nearest node in tree
+            nearest_id, q_near = self.find_nearest(q_rand)
+
+            # Steer toward sample
+            q_new = self.steer(q_near, q_rand, self.step_size)
+
+            # Check collision
+            if not self.obstacle_checker(q_new):
+                # Add to tree
+                new_id = len(self.tree)
+                self.tree[new_id] = (q_new, nearest_id)
+
+                # Check if goal reached
+                if np.linalg.norm(q_new - self.goal) < 0.1:
+                    return self.extract_path(new_id)
+
+        return None  # No path found
+
+    def extract_path(self, goal_id):
+        path = []
+        current_id = goal_id
+        while current_id is not None:
+            config, parent_id = self.tree[current_id]
+            path.append(config)
+            current_id = parent_id
+        return path[::-1]
+```
+
+## Force Control
+
+### Hybrid Position-Force Control
+
+Control position in some directions, force in others:
+
+```python
+def hybrid_controller(robot, desired_pose, desired_force, selection_matrix):
+    """Hybrid position-force controller.
+
+    Args:
+        selection_matrix: S, where S[i,i] = 1 for force control, 0 for position control
+    """
+    # Current state
+    current_pose = robot.get_end_effector_pose()
+    current_force = robot.get_force_sensor()
+
+    # Position error (controlled DOFs)
+    I_minus_S = np.eye(6) - selection_matrix
+    pose_error = compute_pose_error(current_pose, desired_pose)
+    position_term = I_minus_S @ (Kp * pose_error)
+
+    # Force error (force-controlled DOFs)
+    force_error = desired_force - current_force
+    force_term = selection_matrix @ (Kf * force_error)
+
+    # Combined control
+    control_wrench = position_term + force_term
+
+    # Map to joint torques
+    J = robot.compute_jacobian()
+    joint_torques = J.T @ control_wrench
+
+    return joint_torques
+```
+
+**Example**: Inserting peg into hole
+- X, Y: Force control (compliant, search for hole)
+- Z: Position control (insertion depth)
+
+## Dexterous Manipulation
+
+### Multi-Fingered Hands
+
+**Shadow Hand**: 20 DOF, 5 fingers
+**Allegro Hand**: 16 DOF, 4 fingers
+
+**Challenge**: Coordinating many DOF for in-hand manipulation
+
+### In-Hand Reorientation
+
+Rotate object within hand without external support:
+
+```python
+def plan_finger_gaiting(object, initial_grasp, target_orientation):
+    """Plan sequence of regrasps to reorient object."""
+    current_orientation = initial_grasp.orientation
+    gait_sequence = []
+
+    while not orientations_match(current_orientation, target_orientation):
+        # Compute next intermediate orientation
+        next_orientation = interpolate_orientation(
+            current_orientation, target_orientation, step=15  # degrees
+        )
+
+        # Find which fingers to release and where to regrasp
+        fingers_to_move = select_fingers_to_move(initial_grasp)
+        new_contact_points = compute_new_contacts(object, next_orientation)
+
+        # Add gait step
+        gait_sequence.append({
+            'release': fingers_to_move,
+            'regrasp': new_contact_points
+        })
+
+        current_orientation = next_orientation
+
+    return gait_sequence
+```
+
+## Tactile Sensing for Manipulation
+
+### Grasp Stability Monitoring
+
+```python
+class TactileGraspMonitor:
+    def __init__(self, tactile_sensors, slip_threshold=0.1):
+        self.sensors = tactile_sensors
+        self.slip_threshold = slip_threshold
+
+    def detect_slip(self):
+        """Detect object slipping using tactile feedback."""
+        for sensor in self.sensors:
+            force_time_series = sensor.get_recent_forces(window=0.1)  # 100ms
+
+            # Compute force derivative (rapid changes indicate slip)
+            force_derivative = np.diff(force_time_series, axis=0)
+            slip_magnitude = np.max(np.linalg.norm(force_derivative, axis=1))
+
+            if slip_magnitude > self.slip_threshold:
+                return True, sensor.id
+
+        return False, None
+
+    def adjust_grasp_force(self, robot, slip_detected, finger_id):
+        """Increase grasp force if slip detected."""
+        if slip_detected:
+            current_force = robot.get_gripper_force(finger_id)
+            new_force = min(current_force * 1.2, robot.max_safe_force)
+            robot.set_gripper_force(finger_id, new_force)
+```
+
+## Contact-Rich Manipulation
+
+### Peg-in-Hole Insertion
+
+Strategy: Combine search and compliance
+
+```python
+def peg_insertion(robot, peg_pose, hole_pose, hole_tolerance=0.001):
+    """Insert peg into hole with tight tolerance."""
+    # Phase 1: Move peg above hole
+    approach_pose = hole_pose.copy()
+    approach_pose[2] += 0.05  # 5cm above
+
+    robot.move_to_pose(approach_pose)
+
+    # Phase 2: Compliant insertion with spiral search
+    robot.set_impedance(stiffness=[100, 100, 1000, 50, 50, 50])  # Compliant in X,Y
+
+    # Descend while searching in X-Y plane
+    search_radius = 0.003  # 3mm search radius
+    search_angle = 0
+
+    while not insertion_complete(robot):
+        # Spiral search pattern
+        x_offset = search_radius * np.cos(search_angle)
+        y_offset = search_radius * np.sin(search_angle)
+
+        target = hole_pose.copy()
+        target[0] += x_offset
+        target[1] += y_offset
+
+        robot.move_to_pose(target)
+
+        # Check force feedback
+        force_z = robot.get_force_sensor()[2]
+        if force_z > 10:  # Peg making contact
+            # Try descending
+            target[2] -= 0.001  # 1mm down
+            robot.move_to_pose(target)
+
+        search_angle += 0.1  # Increment search
+
+    print("Peg insertion complete")
+```
+
+## Key Takeaways
+
+- Manipulation pipeline: Perception → Grasp Planning → Motion Planning → Execution
+- Grasp quality measured by force closure and stability metrics
+- IK solves for joint angles to achieve desired end-effector poses
+- Motion planning (RRT, RRT*) generates collision-free trajectories
+- Hybrid control enables position control in some directions, force control in others
+- Dexterous manipulation requires coordinated multi-finger control
+- Tactile sensing crucial for grasp stability and slip detection
+- Contact-rich tasks benefit from compliant control strategies
+
+## What's Next?
+
+Chapter 21 extends manipulation concepts to **Whole-Body Control**, where humanoids must coordinate all DOF simultaneously—balancing locomotion with manipulation tasks.
+
+### Further Resources
+
+- **Books**: "A Mathematical Introduction to Robotic Manipulation" by Murray, Li, Sastry
+- **Papers**: "Dex-Net" (grasp planning), "GraspIt!" simulator
+- **Software**: MoveIt (ROS motion planning), OMPL (Open Motion Planning Library)
+- **Hardware**: Robotiq grippers, Shadow Hand, Allegro Hand

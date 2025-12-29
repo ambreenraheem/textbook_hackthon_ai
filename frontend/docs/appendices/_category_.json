@@ -1,0 +1,12 @@
+{
+  "label": "Appendices",
+  "position": 11,
+  "collapsible": true,
+  "collapsed": true,
+  "link": {
+    "type": "generated-index",
+    "title": "Appendices",
+    "description": "Quick reference materials including ROS 2 commands, programming guides, Linux essentials, hardware comparisons, datasets, industry standards, and troubleshooting.",
+    "slug": "/appendices"
+  }
+}

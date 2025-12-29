@@ -1,0 +1,1082 @@
+---
+id: ch26-service-domestic
+title: Chapter 26 - Service & Domestic Robots
+description: Learn about healthcare, hospitality, and home service robot applications.
+sidebar_label: Ch 26. Service & Domestic
+sidebar_position: 2
+keywords: [service robots, domestic robots, healthcare, hospitality]
+difficulty: intermediate
+estimatedReadingTime: 25
+---
+
+# Chapter 26: Service & Domestic Robots
+
+## Learning Objectives
+
+By the end of this chapter, you will be able to:
+- Understand service robot applications in healthcare, hospitality, and homes
+- Design robots for elder care and hospital support
+- Implement domestic assistance features (navigation, manipulation, human interaction)
+- Address user acceptance, trust, and privacy concerns
+- Evaluate deployment strategies and ROI for service environments
+
+## Introduction
+
+Service and domestic robots represent one of the fastest-growing segments of Physical AI, with applications spanning healthcare, hospitality, retail, and home environments. Unlike industrial robots that operate in structured factory settings, service robots must navigate dynamic, human-centered spaces while interacting safely and naturally with people.
+
+### Market Overview (2025)
+
+The service robotics market is experiencing explosive growth driven by labor shortages, aging populations, and technological advancements:
+
+**Healthcare Robots:**
+- Market size: **$14.46 billion (2025)** → **$36.35 billion (2030)**
+- 60% of hospitals in developed countries use robotic automation
+- Applications: Hospital logistics, elder care, rehabilitation, surgical assistance
+
+**Hospitality Robots:**
+- Market size: **$0.79 billion (2023)** → **$3.10 billion (2030)**, 21.7% CAGR
+- 76% of hotels struggling to fill staff roles in 2025
+- Thousands of hotels adopting robots for delivery, cleaning, and concierge services
+
+**Domestic/Home Robots:**
+- Humanoid robotics market: **$2.03 billion (2024)** → **$13 billion (2029)**
+- First consumer humanoid robots entering early access (1X NEO, Sunday Memo)
+- Established markets: Robot vacuums ($5B+), lawn mowers, pool cleaners
+
+### Key Challenges for Service Robots
+
+Unlike industrial settings, service environments present unique challenges:
+
+1. **Unstructured Environments**: Varied layouts, obstacles, lighting conditions
+2. **Human Interaction**: Natural language, social norms, emotional awareness
+3. **Safety-Critical**: Close proximity to vulnerable populations (children, elderly, patients)
+4. **Privacy Concerns**: Cameras and sensors in personal spaces
+5. **Adaptability**: Handling unpredictable situations without human intervention
+6. **Cost Sensitivity**: Must be affordable for hospitals, hotels, and consumers
+
+## Domestic Robots
+
+### Home Humanoids (2025 Frontier)
+
+**1X NEO** - First Consumer-Ready Humanoid
+
+**Specifications:**
+- Weight: 66 lbs (30 kg)
+- Lift capacity: 150+ lbs (68 kg)
+- Carry capacity: 55 lbs (25 kg)
+- Noise level: 22 dB (quieter than a refrigerator)
+- Power: Bio-inspired muscle actuation
+- Price: Expected $30,000-$50,000 range
+
+**Capabilities:**
+- Everyday chores: Laundry, dish loading, tidying
+- Personalized assistance: Learning household routines
+- Safe operation in human environments
+- Autonomous navigation through multi-room layouts
+
+**Status**: Early-access customers receive units in 2026 (announced October 2025)
+
+**Sunday Memo** - AI-Trained Home Robot
+
+**Training:**
+- Trained on **10 million episodes** of real household routines
+- Understands context of home environments
+- Adapts to different family dynamics
+
+**Pilot Program:**
+- Founding Family Beta: 50 households (late 2026)
+- Applications accepted starting November 2025
+
+**Tesla Optimus Gen 2** - Dual-Purpose Robot
+
+**Design Philosophy:**
+- Same robot for industrial and domestic use
+- Learns from real-world data at Tesla factories
+- Mass production approach to reduce cost
+
+**Home Applications:**
+- Repetitive chores (cleaning, organizing)
+- Carrying groceries and objects
+- Home automation integration
+- Security monitoring
+
+**Timeline**: Limited production 2025 (Tesla facilities), consumer release TBD
+
+### Specialized Home Robots
+
+**Robot Vacuum Cleaners:**
+
+Modern robot vacuums represent the most successful domestic robots to date:
+
+**Market Leaders (2025):**
+- iRobot Roomba j9+: AI obstacle avoidance, auto-emptying
+- Roborock S8 Pro Ultra: Sonic mopping, self-washing
+- Ecovacs Deebot X2 Omni: Square design for corners
+- Dreame L10s Ultra: Budget option with full features
+
+**Key Technologies:**
+- **LiDAR SLAM**: Accurate floor mapping
+- **AI Vision**: Recognizing and avoiding obstacles (cables, pet waste, toys)
+- **Multi-floor mapping**: Up to 4 floor plans stored
+- **Auto-empty stations**: 60-day capacity bins
+- **Price range**: $300-$1,500
+
+**Other Specialized Home Robots:**
+- **Lawn Mowers**: Husqvarna Automower, Worx Landroid (GPS boundary-free)
+- **Window Cleaners**: Ecovacs Winbot, Hobot
+- **Pool Cleaners**: Dolphin Nautilus, Polaris
+- **Pet Care**: Automatic feeders, litter boxes
+
+### Home Robot Navigation
+
+**Navigation Stack Example:**
+
+```python
+import rclpy
+from rclpy.node import Node
+from nav_msgs.msg import OccupancyGrid, Path
+from geometry_msgs.msg import PoseStamped, Twist
+from sensor_msgs.msg import LaserScan
+import numpy as np
+
+class HomeRobotNavigator(Node):
+    """Navigation system for domestic robots"""
+
+    def __init__(self):
+        super().__init__('home_robot_navigator')
+
+        # Subscriptions
+        self.map_sub = self.create_subscription(
+            OccupancyGrid, '/map', self.map_callback, 10
+        )
+        self.scan_sub = self.create_subscription(
+            LaserScan, '/scan', self.scan_callback, 10
+        )
+
+        # Publishers
+        self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
+        self.path_pub = self.create_publisher(Path, '/planned_path', 10)
+
+        # State
+        self.current_map = None
+        self.latest_scan = None
+        self.goal_pose = None
+        self.current_path = None
+
+        # Obstacle avoidance parameters
+        self.safe_distance = 0.5  # meters
+        self.max_linear_speed = 0.5  # m/s
+        self.max_angular_speed = 1.0  # rad/s
+
+        self.get_logger().info('Home robot navigator initialized')
+
+    def map_callback(self, msg):
+        """Process updated floor map"""
+        self.current_map = msg
+
+        # If we have a goal, replan path
+        if self.goal_pose:
+            self.plan_path_to_goal()
+
+    def scan_callback(self, msg):
+        """Process laser scan for obstacle avoidance"""
+        self.latest_scan = msg
+
+        # Check for obstacles in path
+        if self.current_path:
+            self.avoid_obstacles()
+
+    def set_goal(self, x, y, theta):
+        """Set navigation goal (e.g., 'go to kitchen')"""
+        self.goal_pose = PoseStamped()
+        self.goal_pose.header.frame_id = 'map'
+        self.goal_pose.header.stamp = self.get_clock().now().to_msg()
+        self.goal_pose.pose.position.x = x
+        self.goal_pose.pose.position.y = y
+        self.goal_pose.pose.orientation.z = np.sin(theta / 2)
+        self.goal_pose.pose.orientation.w = np.cos(theta / 2)
+
+        self.plan_path_to_goal()
+
+    def plan_path_to_goal(self):
+        """Plan path using A* or other planner"""
+        if not self.current_map or not self.goal_pose:
+            return
+
+        # Simplified path planning (replace with proper A* implementation)
+        path = self.a_star_planning(self.current_map, self.goal_pose)
+
+        self.current_path = path
+        self.path_pub.publish(path)
+
+        # Start following path
+        self.follow_path()
+
+    def a_star_planning(self, occupancy_grid, goal):
+        """A* path planning on occupancy grid"""
+        # Placeholder for A* implementation
+        # Returns Path message with waypoints
+        path = Path()
+        path.header.frame_id = 'map'
+        path.header.stamp = self.get_clock().now().to_msg()
+
+        # Add waypoints from current position to goal
+        # (Simplified - implement proper A* algorithm)
+
+        return path
+
+    def avoid_obstacles(self):
+        """Reactive obstacle avoidance using laser scan"""
+        if not self.latest_scan:
+            return
+
+        # Analyze scan for nearby obstacles
+        ranges = np.array(self.latest_scan.ranges)
+        ranges[ranges == 0.0] = np.inf  # Invalid readings
+
+        # Find minimum distance in front sectors
+        front_sector = ranges[len(ranges)//3 : 2*len(ranges)//3]
+        min_distance = np.min(front_sector)
+
+        if min_distance < self.safe_distance:
+            # Obstacle detected! Stop or turn
+            self.get_logger().warn(f'Obstacle detected at {min_distance:.2f}m')
+
+            # Find clear direction
+            left_sector = ranges[:len(ranges)//3]
+            right_sector = ranges[2*len(ranges)//3:]
+
+            left_clear = np.mean(left_sector) > min_distance
+            right_clear = np.mean(right_sector) > min_distance
+
+            # Turn toward more open space
+            twist = Twist()
+            twist.linear.x = 0.0  # Stop forward motion
+
+            if left_clear and not right_clear:
+                twist.angular.z = self.max_angular_speed  # Turn left
+            elif right_clear and not left_clear:
+                twist.angular.z = -self.max_angular_speed  # Turn right
+            else:
+                twist.angular.z = self.max_angular_speed  # Default: turn left
+
+            self.cmd_vel_pub.publish(twist)
+        else:
+            # No obstacles, continue along path
+            self.follow_path()
+
+    def follow_path(self):
+        """Follow planned path using pure pursuit or similar"""
+        if not self.current_path or len(self.current_path.poses) == 0:
+            return
+
+        # Get next waypoint
+        next_waypoint = self.current_path.poses[0]
+
+        # Calculate control commands (simplified)
+        twist = self.compute_velocity_command(next_waypoint)
+
+        self.cmd_vel_pub.publish(twist)
+
+    def compute_velocity_command(self, target_pose):
+        """Compute velocity to reach target pose"""
+        # Placeholder for pure pursuit or DWA controller
+        twist = Twist()
+
+        # Calculate distance and angle to target
+        # Set linear and angular velocities proportionally
+
+        twist.linear.x = 0.3  # Simplified
+        twist.angular.z = 0.0
+
+        return twist
+
+    def navigate_to_room(self, room_name):
+        """High-level command: navigate to named room"""
+
+        # Room locations (from semantic map)
+        room_locations = {
+            'kitchen': (5.0, 2.0, 0.0),
+            'living_room': (2.0, 3.0, 1.57),
+            'bedroom': (8.0, 6.0, 3.14),
+            'bathroom': (6.0, 8.0, -1.57)
+        }
+
+        if room_name in room_locations:
+            x, y, theta = room_locations[room_name]
+            self.set_goal(x, y, theta)
+            self.get_logger().info(f'Navigating to {room_name}')
+        else:
+            self.get_logger().error(f'Unknown room: {room_name}')
+
+def main(args=None):
+    rclpy.init(args=args)
+    navigator = HomeRobotNavigator()
+
+    # Example: Navigate to kitchen
+    navigator.navigate_to_room('kitchen')
+
+    rclpy.spin(navigator)
+    navigator.destroy_node()
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+## Healthcare Robots
+
+### Hospital Service Robots
+
+**Moxi (Diligent Robotics)**
+
+**Capabilities:**
+- Autonomous navigation through hospital hallways and elevators
+- Non-patient-facing tasks: Delivering lab specimens, supplies, medications
+- Collecting soiled linens
+- Social interaction (expressive LED face)
+
+**Technology:**
+- Advanced sensors and cameras
+- AI-driven task planning
+- Integration with hospital management systems
+
+**Impact**: Frees nurses from logistics, allowing focus on patient care
+
+**TUG (Aethon)**
+
+**Purpose**: Hospital logistics and supply chain automation
+
+**Functions:**
+- Autonomous transport of supplies, medications, meals, lab samples
+- Elevator navigation without staff intervention
+- Secure medication delivery (locked compartments)
+- 24/7 operation
+
+**Deployment**: Widely used in major hospital systems (1000+ units deployed)
+
+**Mirokai**
+
+**Applications:**
+- Meal distribution to patient rooms
+- Supply delivery from warehouse to nursing stations
+- Reducing nurse walking distance (average 4-5 miles/shift)
+
+### Elder Care Robots
+
+**ElliQ - Social Companion Robot**
+
+**Design**: Desktop device with expressive screen and voice interface
+
+**Capabilities:**
+- Remembers previous conversations (context continuity)
+- Tailors discussion topics to user interests
+- Proactive engagement (suggests activities)
+- Health reminders (medication, appointments)
+- Video calling with family
+
+**Target Users**: Seniors living independently
+
+**Status**: Available for purchase (~$600 + subscription)
+
+**Lemmy (SHINSE Delta Tech)**
+
+**Form Factor**: AI-based device with large touchscreen
+
+**Functions:**
+- Exercise guidance with visual instructions
+- Telemedicine connectivity (doctors, family)
+- Smart home control integration
+- Activity tracking and health monitoring
+
+**PARO - Therapeutic Robot Seal**
+
+**Purpose**: Comfort and social interaction for dementia patients
+
+**Features:**
+- Soft, pet-like appearance
+- Responds to touch with movement and sounds
+- Reduces patient anxiety and agitation
+- FDA-approved medical device
+
+**Effectiveness**: Clinically proven to reduce stress in dementia patients
+
+**Robotic Service Dogs (Jenny)**
+
+**Target**: Dementia and Alzheimer's patients
+
+**Capabilities:**
+- Responds to petting
+- Makes realistic dog sounds
+- Tail wagging, head/eye movement
+- Provides companionship without care burden of real pet
+
+### Healthcare Robot Integration Example
+
+```python
+import rclpy
+from rclpy.node import Node
+from std_msgs.msg import String, Bool
+from geometry_msgs.msg import PoseStamped
+import json
+
+class HospitalServiceRobot(Node):
+    """Hospital logistics robot controller"""
+
+    def __init__(self):
+        super().__init__('hospital_service_robot')
+
+        # Subscribe to task assignments
+        self.task_sub = self.create_subscription(
+            String, '/task_assignment', self.task_callback, 10
+        )
+
+        # Subscribe to emergency stop
+        self.estop_sub = self.create_subscription(
+            Bool, '/emergency_stop', self.estop_callback, 10
+        )
+
+        # Publishers
+        self.status_pub = self.create_publisher(String, '/robot_status', 10)
+        self.goal_pub = self.create_publisher(PoseStamped, '/move_base_simple/goal', 10)
+
+        # State
+        self.current_task = None
+        self.is_emergency_stopped = False
+        self.task_queue = []
+
+        # Location database (floor + room)
+        self.locations = {
+            'pharmacy': {'floor': 1, 'x': 10.0, 'y': 5.0},
+            'lab': {'floor': 2, 'x': 15.0, 'y': 8.0},
+            'nursing_station_3a': {'floor': 3, 'x': 5.0, 'y': 10.0},
+            'room_301': {'floor': 3, 'x': 8.0, 'y': 12.0},
+            'room_302': {'floor': 3, 'x': 12.0, 'y': 12.0}
+        }
+
+        # Status timer (every 30 seconds)
+        self.status_timer = self.create_timer(30.0, self.publish_status)
+
+        self.get_logger().info('Hospital service robot initialized')
+
+    def task_callback(self, msg):
+        """Receive new task assignment"""
+        try:
+            task = json.loads(msg.data)
+
+            # Validate task
+            if self.validate_task(task):
+                self.task_queue.append(task)
+                self.get_logger().info(f'Task added: {task["type"]} from {task["from"]} to {task["to"]}')
+
+                # Start task if idle
+                if not self.current_task:
+                    self.start_next_task()
+            else:
+                self.get_logger().error(f'Invalid task: {task}')
+
+        except json.JSONDecodeError:
+            self.get_logger().error('Failed to parse task JSON')
+
+    def validate_task(self, task):
+        """Validate task has required fields"""
+        required_fields = ['type', 'from', 'to', 'item', 'priority']
+        return all(field in task for field in required_fields)
+
+    def start_next_task(self):
+        """Start next task from queue"""
+        if len(self.task_queue) == 0:
+            return
+
+        # Sort by priority (1 = highest)
+        self.task_queue.sort(key=lambda t: t['priority'])
+
+        self.current_task = self.task_queue.pop(0)
+        self.execute_task(self.current_task)
+
+    def execute_task(self, task):
+        """Execute delivery task"""
+        self.get_logger().info(f'Executing task: {task["type"]}')
+
+        # Step 1: Navigate to pickup location
+        pickup_loc = task['from']
+        self.navigate_to(pickup_loc)
+
+        # Step 2: Wait for item to be loaded (simulated)
+        # In real system, wait for confirmation from staff via touchscreen or button
+
+        # Step 3: Navigate to delivery location
+        delivery_loc = task['to']
+        self.navigate_to(delivery_loc)
+
+        # Step 4: Wait for item to be unloaded
+
+        # Step 5: Task complete
+        self.task_complete()
+
+    def navigate_to(self, location_name):
+        """Navigate to named location"""
+        if location_name not in self.locations:
+            self.get_logger().error(f'Unknown location: {location_name}')
+            return
+
+        loc = self.locations[location_name]
+
+        # Check if floor change needed
+        current_floor = 3  # Should track actual floor
+        if loc['floor'] != current_floor:
+            self.call_elevator(loc['floor'])
+
+        # Send navigation goal
+        goal = PoseStamped()
+        goal.header.frame_id = 'map'
+        goal.header.stamp = self.get_clock().now().to_msg()
+        goal.pose.position.x = loc['x']
+        goal.pose.position.y = loc['y']
+        goal.pose.orientation.w = 1.0
+
+        self.goal_pub.publish(goal)
+        self.get_logger().info(f'Navigating to {location_name} (floor {loc["floor"]})')
+
+    def call_elevator(self, target_floor):
+        """Interface with elevator system"""
+        self.get_logger().info(f'Calling elevator to go to floor {target_floor}')
+
+        # In real system, communicate with elevator controller via API
+        # 1. Call elevator to current floor
+        # 2. Enter elevator
+        # 3. Press button for target floor
+        # 4. Wait for arrival
+        # 5. Exit elevator
+
+        pass
+
+    def task_complete(self):
+        """Mark current task as complete"""
+        self.get_logger().info(f'Task complete: {self.current_task["type"]}')
+
+        # Log completion to hospital system
+        self.log_task_completion(self.current_task)
+
+        self.current_task = None
+
+        # Start next task
+        self.start_next_task()
+
+    def estop_callback(self, msg):
+        """Handle emergency stop signal"""
+        self.is_emergency_stopped = msg.data
+
+        if self.is_emergency_stopped:
+            self.get_logger().warn('EMERGENCY STOP ACTIVATED')
+            # Stop all motion
+            # Alert staff
+        else:
+            self.get_logger().info('Emergency stop cleared, resuming operation')
+
+    def publish_status(self):
+        """Publish robot status"""
+        status = {
+            'robot_id': 'tug_001',
+            'current_task': self.current_task['type'] if self.current_task else 'idle',
+            'queue_length': len(self.task_queue),
+            'battery_level': 85,  # Placeholder
+            'location': 'floor_3',  # Placeholder
+            'emergency_stopped': self.is_emergency_stopped
+        }
+
+        msg = String()
+        msg.data = json.dumps(status)
+        self.status_pub.publish(msg)
+
+    def log_task_completion(self, task):
+        """Log task to hospital management system"""
+        # Send completion notification via API
+        pass
+
+def main(args=None):
+    rclpy.init(args=args)
+    robot = HospitalServiceRobot()
+    rclpy.spin(robot)
+    robot.destroy_node()
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+## Hospitality Robots
+
+### Hotel Delivery Robots
+
+2025 sees widespread adoption of hotel delivery robots, with thousands of properties deploying robots for room service and amenities.
+
+**Leading Platforms:**
+
+**Relay (Savioke)**
+- Delivers items to guest rooms autonomously
+- Calls elevators independently
+- Friendly interface with personality
+- Deployed in Marriott, Hilton, and other chains
+
+**Aethon TUG** (Hotel variant)
+- Room service delivery
+- Laundry transport
+- Minibar restocking
+
+**Deployment Scale:**
+- Major chains: 3-5 robots per property
+- Handle 30% of room service deliveries
+- Cost: ~$0.20/delivery vs. human labor costs
+
+**ROI:**
+- Initial investment: $2,500-$10,000/unit
+- Payback period: 12-18 months
+- Operational savings: Frees staff for guest interaction
+
+### Restaurant Service Robots
+
+**Bear Robotics Servi**
+
+**Function**: Tray-carrying robot waiter
+
+**Capabilities:**
+- Runs dishes from kitchen to tables
+- Returns dirty plates to dish area
+- Multi-tray capacity (up to 40 kg)
+- Navigates crowded dining rooms
+
+**Deployment**: Widely used in US and Asian restaurants
+
+**Benefits:**
+- Reduces server walking distance
+- Allows servers to focus on customer service
+- Handles repetitive trips efficiently
+
+**Serve Robotics** - Sidewalk Delivery Robots
+
+**Scale**: Plans to deploy **2,000 AI-powered delivery robots** across the U.S. by end of 2025
+
+**Applications:**
+- Restaurant food delivery (last-mile)
+- Autonomous navigation on sidewalks
+- Integration with food delivery apps (Uber Eats)
+
+**Technical Capabilities:**
+- 99.5% obstacle avoidance accuracy
+- Multi-lingual interaction
+- 12+ hours continuous operation
+
+### Concierge and Information Robots
+
+**Pepper (SoftBank Robotics)**
+
+**Form Factor**: Humanoid robot (120 cm tall)
+
+**Applications:**
+- Hotel lobby information desk
+- Retail store greeter
+- Mall information kiosk
+
+**Capabilities:**
+- Natural language conversation (20+ languages)
+- Emotion recognition
+- Touchscreen display on chest
+- Gestures and expressive movements
+
+**Deployment**: 1000+ units globally (pre-2025)
+
+**Connie (Hilton + IBM Watson)**
+
+**Purpose**: AI-powered hotel concierge
+
+**Features:**
+- Answers guest questions about hotel amenities
+- Provides local recommendations
+- Learns from interactions to improve responses
+
+### Cleaning Robots
+
+**Whiz (SoftBank Robotics)**
+
+**Application**: Commercial floor cleaning
+
+**Deployment:**
+- Airports, shopping malls, office buildings, hotels
+- Autonomous navigation
+- Scheduled cleaning routes
+
+**Benefits:**
+- Operates during off-hours
+- Consistent cleaning quality
+- Frees staff for detailed cleaning tasks
+
+## User Acceptance and Trust
+
+### Factors Influencing Acceptance
+
+**1. Performance and Reliability**
+- Must complete tasks successfully >95% of the time
+- Failures in view of users erode trust quickly
+- Graceful failure recovery essential
+
+**2. Social Appropriateness**
+- Understanding personal space (1.2m minimum in non-crowded areas)
+- Polite verbal and non-verbal communication
+- Cultural awareness (greetings, eye contact norms)
+
+**3. Transparency**
+- Clear indication of robot capabilities and limitations
+- Visible sensors (cameras) raise privacy concerns—must communicate data handling
+- Explainable decisions ("I'm going to the kitchen to deliver your meal")
+
+**4. Anthropomorphism Balance**
+- Some human-like features aid interaction (eyes, voice, gestures)
+- Overly human-like appearance can trigger "uncanny valley" effect
+- Functional design with friendly personality often works best
+
+**5. Privacy and Security**
+- Cameras in homes and hospital rooms are sensitive
+- Data encryption and access controls mandatory
+- Local processing preferred over cloud where possible
+
+### Building Trust Through Design
+
+**Voice and Personality:**
+```python
+class RobotPersonality:
+    """Manage robot speech and personality"""
+
+    def __init__(self, personality='friendly'):
+        self.personality = personality
+        self.interaction_count = 0
+
+    def generate_greeting(self, user_name=None):
+        """Generate contextually appropriate greeting"""
+
+        if self.personality == 'friendly':
+            greetings = [
+                f"Hello{' ' + user_name if user_name else ''}! How can I help you today?",
+                f"Hi there! Nice to see you{' again' if self.interaction_count > 0 else ''}!",
+                "Good day! I'm ready to assist you."
+            ]
+        elif self.personality == 'professional':
+            greetings = [
+                f"Good {'morning' if time.hour < 12 else 'afternoon'}. How may I assist you?",
+                "Hello. I am at your service.",
+                "Greetings. What can I do for you today?"
+            ]
+
+        import random
+        greeting = random.choice(greetings)
+        self.interaction_count += 1
+
+        return greeting
+
+    def explain_action(self, action, reason):
+        """Explain what robot is doing and why (transparency)"""
+
+        if self.personality == 'friendly':
+            return f"I'm {action} because {reason}. This should take about a minute!"
+        elif self.personality == 'professional':
+            return f"Currently {action}: {reason}. Estimated duration: 60 seconds."
+
+    def handle_error(self, error_type):
+        """Communicate errors gracefully"""
+
+        error_messages = {
+            'navigation_blocked': "Oops! My path is blocked. Could you help me find another route?",
+            'task_failed': "I'm sorry, I wasn't able to complete that task. Let me try a different approach.",
+            'low_battery': "I'm running low on power. I need to charge soon, but I'll finish this task first!",
+            'unknown_command': "I'm not sure I understand. Could you rephrase that?"
+        }
+
+        return error_messages.get(error_type, "I've encountered an issue. Please alert a staff member.")
+
+# Usage
+personality = RobotPersonality(personality='friendly')
+print(personality.generate_greeting(user_name='Sarah'))
+print(personality.explain_action('navigating to your room', 'I have your room service order'))
+print(personality.handle_error('navigation_blocked'))
+```
+
+### Privacy-Preserving Design
+
+**On-Device Processing:**
+```python
+class PrivacyPreservingVision:
+    """Process camera data with privacy protections"""
+
+    def __init__(self):
+        self.person_detector = self.load_person_detector()
+        self.anonymizer = self.load_anonymizer()
+
+    def process_camera_frame(self, frame):
+        """Process camera frame without storing identifiable images"""
+
+        # Detect people (for navigation/safety)
+        detections = self.person_detector.detect(frame)
+
+        # Extract only what's needed: bounding boxes, not faces
+        person_locations = []
+        for detection in detections:
+            bbox = detection['bbox']
+            distance = self.estimate_distance(bbox)
+
+            person_locations.append({
+                'bbox': bbox,
+                'distance': distance,
+                'timestamp': time.time()
+            })
+
+            # Anonymize faces if image must be stored (e.g., for debugging)
+            frame = self.anonymizer.blur_faces(frame, detections)
+
+        # Do NOT store original frame
+        # Only store anonymized data or no images at all
+
+        return person_locations
+
+    def estimate_distance(self, bbox):
+        """Estimate distance to person from bounding box size"""
+        # Larger bbox = closer person
+        bbox_height = bbox[3] - bbox[1]
+        estimated_distance = 1000 / bbox_height  # Simplified formula
+        return estimated_distance
+
+    def load_person_detector(self):
+        """Load lightweight person detection model"""
+        # Use efficient model for on-device inference
+        pass
+
+    def load_anonymizer(self):
+        """Load face blurring/anonymization model"""
+        pass
+```
+
+## Implementation Considerations
+
+### 1. Environment Mapping
+
+Service robots need detailed maps with semantic information:
+
+**Semantic Map Elements:**
+- Room types (kitchen, bedroom, bathroom)
+- Furniture locations (beds, chairs, tables)
+- No-go zones (stairs, fragile items, restricted areas)
+- Charging station locations
+- Dynamic obstacles (people, pets)
+
+**Mapping Tools:**
+- SLAM (Simultaneous Localization and Mapping): ROS2 Nav2, Cartographer
+- 3D mapping for stairs and obstacles: Octomap
+- Regular map updates to adapt to environment changes
+
+### 2. Human-Robot Interaction (HRI)
+
+**Natural Language Interface:**
+```python
+class VoiceCommandHandler:
+    """Process natural language commands"""
+
+    def __init__(self):
+        self.nlp_model = self.load_nlp_model()
+        self.action_map = {
+            'navigate': self.handle_navigation,
+            'fetch': self.handle_fetch,
+            'clean': self.handle_cleaning,
+            'remind': self.handle_reminder
+        }
+
+    def process_command(self, speech_text):
+        """Parse voice command and execute action"""
+
+        # Extract intent and entities
+        intent = self.nlp_model.get_intent(speech_text)
+        entities = self.nlp_model.get_entities(speech_text)
+
+        # Confirm understanding
+        confirmation = self.generate_confirmation(intent, entities)
+        self.speak(confirmation)
+
+        # Execute action
+        if intent in self.action_map:
+            self.action_map[intent](entities)
+        else:
+            self.speak("I'm not sure how to do that. Can you rephrase?")
+
+    def handle_navigation(self, entities):
+        """Handle navigation commands: 'go to the kitchen'"""
+        if 'location' in entities:
+            location = entities['location']
+            self.robot.navigate_to_room(location)
+
+    def handle_fetch(self, entities):
+        """Handle fetch commands: 'bring me my glasses from the bedroom'"""
+        if 'object' in entities and 'location' in entities:
+            obj = entities['object']
+            location = entities['location']
+            self.robot.fetch_object(obj, location)
+
+    def handle_cleaning(self, entities):
+        """Handle cleaning commands: 'vacuum the living room'"""
+        if 'location' in entities:
+            location = entities['location']
+            self.robot.clean_room(location)
+
+    def generate_confirmation(self, intent, entities):
+        """Generate confirmation message"""
+        if intent == 'navigate':
+            return f"Okay, I'll go to the {entities.get('location', 'location you specified')}."
+        elif intent == 'fetch':
+            return f"I'll get your {entities.get('object', 'item')} from the {entities.get('location', 'room')}."
+        elif intent == 'clean':
+            return f"I'll clean the {entities.get('location', 'area')} for you."
+        else:
+            return "Got it!"
+
+    def speak(self, text):
+        """Text-to-speech output"""
+        # Use TTS engine (e.g., gTTS, pyttsx3, cloud TTS)
+        pass
+
+    def load_nlp_model(self):
+        """Load NLP model for intent/entity extraction"""
+        # Use Rasa, Dialogflow, or custom model
+        pass
+```
+
+### 3. Safety Considerations
+
+**Collision Avoidance:**
+- Multiple redundant sensors (LiDAR, cameras, ultrasonics)
+- Speed limits based on environment (0.5 m/s in crowded areas)
+- Emergency stop button accessible to users
+
+**Fall Prevention (for mobile manipulators):**
+- Cliff detection sensors
+- Stair avoidance in non-stair-climbing robots
+
+**Safe Manipulation:**
+- Force-torque sensing for gentle object handling
+- Grasp failure detection
+- Drop prevention for fragile/heavy items
+
+### 4. Business Model and ROI
+
+**Cost Breakdown (Hospital Service Robot):**
+
+```
+Initial Costs:
+- Robot platform: $50,000-$80,000
+- Integration and setup: $10,000-$20,000
+- Training: $5,000
+Total Initial: $65,000-$105,000
+
+Annual Operating Costs:
+- Maintenance: $5,000-$8,000 (10% of robot cost)
+- Software updates/licensing: $2,000
+- Electricity: $500
+- Insurance: $1,000
+Total Annual: $8,500-$11,500
+
+Annual Savings:
+- Labor savings: $40,000-$60,000 (0.5-1 FTE freed for direct care)
+- Efficiency gains: Faster deliveries, reduced wait times
+- Error reduction: Fewer lost specimens/items
+
+Payback Period: 1.5-2.5 years
+5-Year ROI: 150-250%
+```
+
+## Practice Exercises
+
+### Exercise 1: Home Robot Voice Control
+
+**Objective**: Implement natural language command processing for a home robot
+
+**Requirements:**
+- Support commands: "go to [room]", "clean [room]", "find [object]"
+- Use speech recognition (Google Speech API, Vosk)
+- Confirm understanding before executing
+- Handle ambiguous commands gracefully
+
+**Evaluation:**
+- 90%+ intent recognition accuracy
+- `<2 second` response latency
+- Graceful failure handling
+
+### Exercise 2: Hospital Logistics Dashboard
+
+**Objective**: Build web dashboard for monitoring hospital service robots
+
+**Features:**
+- Real-time robot locations on floor map
+- Task queue and completion status
+- Battery levels and charging schedules
+- Performance metrics (deliveries/hour, uptime%)
+- Alert system for errors/stuck robots
+
+**Tech Stack:**
+- React or Vue.js frontend
+- ROS 2 bridge for real-time data
+- WebSocket for live updates
+
+### Exercise 3: Privacy-Preserving Object Detection
+
+**Objective**: Implement object detection that preserves user privacy
+
+**Requirements:**
+- Detect objects and people for navigation
+- Blur/remove faces from any stored images
+- Process data on-device (no cloud uploads)
+- Log only anonymous metadata (object classes, positions, timestamps)
+
+**Deliverables:**
+- Modified YOLOv8 or similar detector
+- Face anonymization pipeline
+- Privacy compliance documentation
+
+## Key Takeaways
+
+- Service robot markets experiencing explosive growth: **Healthcare ($14B→$36B by 2030)**, **Hospitality ($0.79B→$3.1B by 2030)**, **Domestic ($2B→$13B humanoids by 2029)**
+- **First consumer humanoid robots** entering early access in 2026 (1X NEO, Sunday Memo)
+- **Healthcare robots** excel in logistics and elder care companionship, freeing staff for direct patient care
+- **Hospitality robots** addressing severe labor shortages (76% of hotels struggling to hire)
+- **User acceptance** requires reliability, transparency, privacy protection, and appropriate social behavior
+- **Privacy by design** critical: on-device processing, face anonymization, minimal data retention
+
+## Further Reading
+
+### Market Reports
+- [Healthcare Robotics Market Analysis 2025](https://www.mordorintelligence.com/industry-reports/healthcare-service-robots-market)
+- [Hospitality Robotics Growth Forecast](https://www.marketsandmarkets.com/Market-Reports/hospitality-robots-market.html)
+
+### Product Documentation
+- [1X NEO Home Robot](https://www.1x.tech/discover/neo-home-robot)
+- [Bear Robotics Servi](https://www.bearrobotics.ai/)
+- [Diligent Robotics Moxi](https://diligentrobots.com/moxi)
+
+### Research Organizations
+- [Human-Robot Interaction Lab - MIT](https://interactive.mit.edu/)
+- [Personal Robotics Lab - CMU](https://www.ri.cmu.edu/robotics-groups/personal-robotics-lab/)
+
+## Next Steps
+
+Continue to [Chapter 27: Hardware & Electronics](./ch27-hardware-electronics.mdx) to learn about the physical components that power service robots.
+
+For more on robot navigation algorithms, see [Chapter 20: Robotic Manipulation](../part-06-motion-control/ch20-manipulation.mdx).
+
+---
+
+## Sources
+
+- [Top 12 Humanoid Robots of 2025](https://humanoidroboticstechnology.com/articles/top-12-humanoid-robots-of-2025/)
+- [1X NEO Home Robot](https://www.1x.tech/discover/neo-home-robot)
+- [Sunday Unveils Memo Humanoid Robot](https://roboticsandautomationnews.com/2025/11/21/sunday-unveils-new-humanoid-robot-for-the-home/96791/)
+- [6 Nurse AI Robots Changing Healthcare 2025](https://nurse.org/articles/nurse-robots/)
+- [7 Robots for Health and Care from CES 2025](https://www.icthealth.org/news/7-robots-for-health-and-care-from-ces-2025)
+- [Healthcare Support Robots in Hospitals](https://roboticsandautomationnews.com/2025/10/10/healthcare-support-robots-assisting-patients-and-medical-staff/95357/)
+- [Robots in Hospitality: Enhancing Guest Experience](https://roboticsandautomationnews.com/2025/10/03/robots-in-hospitality-enhancing-the-guest-experience/95120/)
+- [AI-Powered Service Robots Redefine Hospitality](https://www.prnewswire.com/news-releases/ai-powered-service-robots-redefine-hospitality-as-industry-innovators-lead-the-charge-302425566.html)
+- [Is 2025 the Year for Robots in Hotels?](https://www.hospitalitynet.org/viewpoint/125000229.html)

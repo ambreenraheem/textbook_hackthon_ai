@@ -1,0 +1,1118 @@
+---
+id: project-04-vision-manipulation
+title: Project 4 - Vision-Based Manipulation
+description: Combine computer vision and robotic manipulation for object detection, grasping, and placement.
+sidebar_label: Proj 4. Vision Manipulation
+sidebar_position: 4
+difficulty: advanced
+estimatedDuration: 5-7 hours
+prerequisites:
+  - ch12-computer-vision
+  - ch20-manipulation
+technologies: [ROS 2, OpenCV, YOLO, MoveIt, Python]
+learningOutcomes:
+  - Implement object detection and 3D pose estimation
+  - Plan grasp poses using vision data
+  - Execute pick-and-place tasks
+  - Handle manipulation failures and retries
+keywords: [computer vision, manipulation, object detection, grasping, pick-and-place]
+---
+
+# Project 4: Vision-Based Manipulation
+
+## Overview
+
+Develop a complete vision-based manipulation system that detects objects, plans grasps, and executes pick-and-place operations autonomously.
+
+## Prerequisites
+
+Before starting this project, you should have completed:
+- [Chapter 12: Computer Vision for Robotics](/docs/part-04-perception/ch12-computer-vision) - Image processing and object detection
+- [Chapter 20: Robotic Manipulation](/docs/part-06-motion-control/ch20-manipulation) - Grasping and motion planning
+
+## Learning Objectives
+
+By completing this project, you will:
+1. Integrate cameras and depth sensors with ROS 2
+2. Implement object detection using YOLO or similar
+3. Estimate 3D object poses from RGB-D data
+4. Generate grasp candidates and select optimal grasps
+5. Plan collision-free trajectories with MoveIt
+6. Execute pick-and-place sequences
+7. Handle perception and manipulation failures
+
+## Project Steps
+
+### Step 1: Vision System Setup
+
+#### 1.1 Create Vision Manipulation Package
+
+```bash
+cd ~/ros2_ws/src
+ros2 pkg create --build-type ament_python vision_manipulation \
+  --dependencies rclpy std_msgs sensor_msgs geometry_msgs cv_bridge
+
+cd vision_manipulation
+mkdir -p vision_manipulation/models config launch worlds
+
+# Install dependencies
+pip install opencv-python numpy ultralytics scipy
+sudo apt install -y ros-jazzy-moveit ros-jazzy-moveit-planners \
+  ros-jazzy-moveit-ros-visualization ros-jazzy-realsense2-camera
+```
+
+#### 1.2 Setup Robot with Camera and Gripper
+
+Create `urdf/manipulation_robot.urdf.xacro`:
+
+```xml
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="manipulation_robot">
+
+  <!-- Include UR5e arm -->
+  <xacro:include filename="$(find ur_description)/urdf/ur5e.urdf.xacro"/>
+
+  <!-- Base -->
+  <link name="world"/>
+
+  <link name="base_link">
+    <visual>
+      <geometry>
+        <box size="0.5 0.5 0.1"/>
+      </geometry>
+      <material name="gray">
+        <color rgba="0.5 0.5 0.5 1"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="0.5 0.5 0.1"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="10.0"/>
+      <inertia ixx="0.208" ixy="0" ixz="0" iyy="0.208" iyz="0" izz="0.208"/>
+    </inertial>
+  </link>
+
+  <joint name="world_to_base" type="fixed">
+    <parent link="world"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 0.05" rpy="0 0 0"/>
+  </joint>
+
+  <!-- UR5e Arm -->
+  <xacro:ur5e_robot prefix="" joint_limited="true"/>
+
+  <joint name="base_to_ur5e" type="fixed">
+    <parent link="base_link"/>
+    <child link="base_link_inertia"/>
+    <origin xyz="0 0 0.05" rpy="0 0 0"/>
+  </joint>
+
+  <!-- RGB-D Camera (RealSense D435) -->
+  <link name="camera_link">
+    <visual>
+      <geometry>
+        <box size="0.025 0.09 0.025"/>
+      </geometry>
+      <material name="black">
+        <color rgba="0.1 0.1 0.1 1"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="0.025 0.09 0.025"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.072"/>
+      <inertia ixx="0.00001" ixy="0" ixz="0" iyy="0.00001" iyz="0" izz="0.00001"/>
+    </inertial>
+  </link>
+
+  <joint name="camera_joint" type="fixed">
+    <parent link="wrist_3_link"/>
+    <child link="camera_link"/>
+    <origin xyz="0.05 0 0.05" rpy="0 ${pi/4} 0"/>
+  </joint>
+
+  <!-- Camera sensor -->
+  <gazebo reference="camera_link">
+    <sensor name="rgbd_camera" type="depth">
+      <update_rate>30</update_rate>
+      <camera>
+        <horizontal_fov>1.047</horizontal_fov>
+        <image>
+          <width>640</width>
+          <height>480</height>
+          <format>R8G8B8</format>
+        </image>
+        <clip>
+          <near>0.1</near>
+          <far>10.0</far>
+        </clip>
+      </camera>
+      <plugin name="camera_controller" filename="libgazebo_ros_camera.so">
+        <frame_name>camera_link</frame_name>
+        <min_depth>0.1</min_depth>
+        <max_depth>10.0</max_depth>
+      </plugin>
+    </sensor>
+  </gazebo>
+
+  <!-- Simple Parallel Gripper -->
+  <xacro:macro name="finger" params="prefix reflect">
+    <link name="${prefix}_finger">
+      <visual>
+        <geometry>
+          <box size="0.02 0.01 0.08"/>
+        </geometry>
+        <material name="dark_gray">
+          <color rgba="0.3 0.3 0.3 1"/>
+        </material>
+      </visual>
+      <collision>
+        <geometry>
+          <box size="0.02 0.01 0.08"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <mass value="0.05"/>
+        <inertia ixx="0.00001" ixy="0" ixz="0" iyy="0.00001" iyz="0" izz="0.00001"/>
+      </inertial>
+    </link>
+
+    <joint name="${prefix}_finger_joint" type="prismatic">
+      <parent link="tool0"/>
+      <child link="${prefix}_finger"/>
+      <origin xyz="0 ${reflect * 0.02} 0.04" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <limit lower="0" upper="0.04" effort="50" velocity="0.1"/>
+    </joint>
+  </xacro:macro>
+
+  <xacro:finger prefix="left" reflect="1"/>
+  <xacro:finger prefix="right" reflect="-1"/>
+
+  <!-- MoveIt configuration -->
+  <gazebo>
+    <plugin filename="libgazebo_ros2_control.so" name="gazebo_ros2_control">
+      <parameters>$(find vision_manipulation)/config/controllers.yaml</parameters>
+    </plugin>
+  </gazebo>
+
+</robot>
+```
+
+#### 1.3 Create World with Objects
+
+Create `worlds/manipulation_world.sdf`:
+
+```xml
+<?xml version="1.0"?>
+<sdf version="1.9">
+  <world name="manipulation_world">
+    <physics name="1ms" type="ode">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors"/>
+
+    <light name="sun" type="directional">
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>1 1 1 1</diffuse>
+      <specular>0.5 0.5 0.5 1</specular>
+      <direction>-0.5 0.5 -1</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane><normal>0 0 1</normal></plane>
+          </geometry>
+        </collision>
+      </link>
+    </model>
+
+    <!-- Table -->
+    <model name="table">
+      <static>true</static>
+      <pose>0.5 0 0 0 0 0</pose>
+      <link name="link">
+        <collision name="surface">
+          <geometry>
+            <box><size>0.8 1.2 0.03</size></box>
+          </geometry>
+          <surface>
+            <friction>
+              <ode><mu>0.6</mu></ode>
+            </friction>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box><size>0.8 1.2 0.03</size></box>
+          </geometry>
+          <material>
+            <ambient>0.8 0.6 0.4 1</ambient>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Objects to manipulate -->
+    <model name="red_cube">
+      <pose>0.5 0.2 0.05 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box><size>0.05 0.05 0.05</size></box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box><size>0.05 0.05 0.05</size></box>
+          </geometry>
+          <material>
+            <ambient>0.8 0.1 0.1 1</ambient>
+          </material>
+        </visual>
+        <inertial>
+          <mass>0.1</mass>
+          <inertia>
+            <ixx>0.00004</ixx><iyy>0.00004</iyy><izz>0.00004</izz>
+          </inertia>
+        </inertial>
+      </link>
+    </model>
+
+    <model name="blue_cylinder">
+      <pose>0.5 -0.2 0.04 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <cylinder><radius>0.03</radius><length>0.08</length></cylinder>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <cylinder><radius>0.03</radius><length>0.08</length></cylinder>
+          </geometry>
+          <material>
+            <ambient>0.1 0.1 0.8 1</ambient>
+          </material>
+        </visual>
+        <inertial>
+          <mass>0.08</mass>
+          <inertia>
+            <ixx>0.00005</ixx><iyy>0.00005</iyy><izz>0.00001</izz>
+          </inertia>
+        </inertial>
+      </link>
+    </model>
+
+  </world>
+</sdf>
+```
+
+---
+
+### Step 2: Object Detection and Pose Estimation
+
+#### 2.1 Create Object Detection Node
+
+Create `vision_manipulation/object_detector.py`:
+
+```python
+#!/usr/bin/env python3
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import Image, CameraInfo
+from geometry_msgs.msg import PoseStamped, PoseArray
+from cv_bridge import CvBridge
+import cv2
+import numpy as np
+from ultralytics import YOLO
+
+class ObjectDetector(Node):
+    def __init__(self):
+        super().__init__('object_detector')
+
+        # CV Bridge
+        self.bridge = CvBridge()
+
+        # Load YOLO model
+        self.model = YOLO('yolov8n.pt')  # Nano model for speed
+
+        # Subscribers
+        self.rgb_sub = self.create_subscription(
+            Image, '/camera/image_raw', self.image_callback, 10)
+        self.depth_sub = self.create_subscription(
+            Image, '/camera/depth/image_raw', self.depth_callback, 10)
+        self.camera_info_sub = self.create_subscription(
+            CameraInfo, '/camera/camera_info', self.camera_info_callback, 10)
+
+        # Publishers
+        self.detection_pub = self.create_publisher(
+            PoseArray, '/detected_objects', 10)
+        self.annotated_pub = self.create_publisher(
+            Image, '/annotated_image', 10)
+
+        # Camera parameters
+        self.camera_matrix = None
+        self.latest_depth = None
+
+        self.get_logger().info('Object Detector initialized')
+
+    def camera_info_callback(self, msg):
+        """Store camera intrinsics"""
+        if self.camera_matrix is None:
+            self.camera_matrix = np.array(msg.k).reshape(3, 3)
+            self.get_logger().info('Camera intrinsics received')
+
+    def depth_callback(self, msg):
+        """Store latest depth image"""
+        self.latest_depth = self.bridge.imgmsg_to_cv2(msg, desired_encoding='32FC1')
+
+    def image_callback(self, msg):
+        """Detect objects in RGB image"""
+        cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+
+        # Run YOLO detection
+        results = self.model(cv_image, conf=0.5)
+
+        # Process detections
+        pose_array = PoseArray()
+        pose_array.header = msg.header
+
+        annotated_image = cv_image.copy()
+
+        for result in results:
+            boxes = result.boxes
+            for box in boxes:
+                # Get bounding box
+                x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+                cls = int(box.cls[0])
+                conf = float(box.conf[0])
+
+                # Draw detection
+                cv2.rectangle(annotated_image,
+                            (int(x1), int(y1)), (int(x2), int(y2)),
+                            (0, 255, 0), 2)
+                label = f'{self.model.names[cls]}: {conf:.2f}'
+                cv2.putText(annotated_image, label,
+                          (int(x1), int(y1) - 10),
+                          cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+                # Estimate 3D pose
+                pose = self.estimate_3d_pose(x1, y1, x2, y2)
+                if pose:
+                    pose_array.poses.append(pose)
+
+        # Publish results
+        self.detection_pub.publish(pose_array)
+        annotated_msg = self.bridge.cv2_to_imgmsg(annotated_image, encoding='bgr8')
+        self.annotated_pub.publish(annotated_msg)
+
+    def estimate_3d_pose(self, x1, y1, x2, y2):
+        """Estimate 3D pose from bounding box and depth"""
+        if self.latest_depth is None or self.camera_matrix is None:
+            return None
+
+        # Center of bounding box
+        cx = int((x1 + x2) / 2)
+        cy = int((y1 + y2) / 2)
+
+        # Get depth at center
+        depth = self.latest_depth[cy, cx]
+
+        if depth <= 0 or np.isnan(depth):
+            return None
+
+        # Back-project to 3D
+        fx = self.camera_matrix[0, 0]
+        fy = self.camera_matrix[1, 1]
+        cx_cam = self.camera_matrix[0, 2]
+        cy_cam = self.camera_matrix[1, 2]
+
+        x_3d = (cx - cx_cam) * depth / fx
+        y_3d = (cy - cy_cam) * depth / fy
+        z_3d = depth
+
+        # Create pose
+        pose = PoseStamped()
+        pose.header.frame_id = 'camera_link'
+        pose.pose.position.x = z_3d  # Camera Z -> World X
+        pose.pose.position.y = -x_3d  # Camera X -> World -Y
+        pose.pose.position.z = -y_3d  # Camera Y -> World -Z
+        pose.pose.orientation.w = 1.0
+
+        return pose.pose
+
+def main():
+    rclpy.init()
+    node = ObjectDetector()
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+#### 2.2 Create Point Cloud Processing
+
+Create `vision_manipulation/pointcloud_processor.py`:
+
+```python
+#!/usr/bin/env python3
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import PointCloud2
+from geometry_msgs.msg import PoseStamped
+import numpy as np
+from scipy.spatial.transform import Rotation
+
+class PointCloudProcessor(Node):
+    def __init__(self):
+        super().__init__('pointcloud_processor')
+
+        # Subscribe to point cloud
+        self.pc_sub = self.create_subscription(
+            PointCloud2, '/camera/depth/points', self.pointcloud_callback, 10)
+
+        # Publishers
+        self.object_pose_pub = self.create_publisher(
+            PoseStamped, '/object_pose', 10)
+
+        self.get_logger().info('PointCloud Processor initialized')
+
+    def pointcloud_callback(self, msg):
+        """Process point cloud to extract object poses"""
+        # Convert to numpy array
+        points = self.pointcloud2_to_array(msg)
+
+        # Segment objects (simple Z-threshold)
+        table_height = 0.0
+        object_points = points[points[:, 2] > table_height + 0.01]
+
+        if len(object_points) < 10:
+            return
+
+        # Cluster points (simple approach)
+        clusters = self.cluster_points(object_points)
+
+        for cluster in clusters:
+            pose = self.estimate_object_pose(cluster)
+            self.object_pose_pub.publish(pose)
+
+    def pointcloud2_to_array(self, msg):
+        """Convert PointCloud2 to numpy array"""
+        # Simplified conversion (use sensor_msgs_py in production)
+        dtype = np.float32
+        point_step = msg.point_step
+        data = np.frombuffer(msg.data, dtype=dtype)
+        points = data.reshape(-1, point_step // 4)[:, :3]  # XYZ only
+        return points
+
+    def cluster_points(self, points, distance_threshold=0.05):
+        """Simple distance-based clustering"""
+        clusters = []
+        remaining = points.copy()
+
+        while len(remaining) > 10:
+            seed = remaining[0]
+            distances = np.linalg.norm(remaining - seed, axis=1)
+            cluster_mask = distances < distance_threshold
+
+            cluster = remaining[cluster_mask]
+            clusters.append(cluster)
+
+            remaining = remaining[~cluster_mask]
+
+        return clusters
+
+    def estimate_object_pose(self, points):
+        """Estimate pose from point cluster"""
+        # Centroid
+        centroid = np.mean(points, axis=0)
+
+        # PCA for orientation
+        centered = points - centroid
+        cov = np.cov(centered.T)
+        eigenvalues, eigenvectors = np.linalg.eig(cov)
+
+        # Sort by eigenvalue
+        idx = eigenvalues.argsort()[::-1]
+        eigenvectors = eigenvectors[:, idx]
+
+        # Create pose
+        pose = PoseStamped()
+        pose.header.frame_id = 'camera_link'
+        pose.header.stamp = self.get_clock().now().to_msg()
+
+        pose.pose.position.x = float(centroid[0])
+        pose.pose.position.y = float(centroid[1])
+        pose.pose.position.z = float(centroid[2])
+
+        # Orientation from PCA
+        rotation = Rotation.from_matrix(eigenvectors)
+        quat = rotation.as_quat()
+        pose.pose.orientation.x = quat[0]
+        pose.pose.orientation.y = quat[1]
+        pose.pose.orientation.z = quat[2]
+        pose.pose.orientation.w = quat[3]
+
+        return pose
+
+def main():
+    rclpy.init()
+    node = PointCloudProcessor()
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+---
+
+### Step 3: Grasp Planning
+
+#### 3.1 Create Grasp Generator
+
+Create `vision_manipulation/grasp_planner.py`:
+
+```python
+#!/usr/bin/env python3
+import rclpy
+from rclpy.node import Node
+from geometry_msgs.msg import PoseStamped, PoseArray
+from visualization_msgs.msg import MarkerArray, Marker
+import numpy as np
+from scipy.spatial.transform import Rotation
+
+class GraspPlanner(Node):
+    def __init__(self):
+        super().__init__('grasp_planner')
+
+        # Subscribe to object poses
+        self.object_sub = self.create_subscription(
+            PoseArray, '/detected_objects', self.object_callback, 10)
+
+        # Publishers
+        self.grasp_pub = self.create_publisher(
+            PoseArray, '/grasp_poses', 10)
+        self.marker_pub = self.create_publisher(
+            MarkerArray, '/grasp_markers', 10)
+
+        # Grasp parameters
+        self.approach_distance = 0.15  # meters
+        self.gripper_width = 0.08      # meters
+
+        self.get_logger().info('Grasp Planner initialized')
+
+    def object_callback(self, msg):
+        """Generate grasps for detected objects"""
+        grasp_array = PoseArray()
+        grasp_array.header = msg.header
+
+        markers = MarkerArray()
+
+        for i, object_pose in enumerate(msg.poses):
+            # Generate multiple grasp candidates
+            grasps = self.generate_grasp_candidates(object_pose)
+
+            # Score and rank grasps
+            scored_grasps = self.score_grasps(grasps, object_pose)
+
+            # Add best grasp
+            if scored_grasps:
+                best_grasp = scored_grasps[0]
+                grasp_array.poses.append(best_grasp)
+
+                # Create visualization marker
+                marker = self.create_grasp_marker(best_grasp, i)
+                markers.markers.append(marker)
+
+        self.grasp_pub.publish(grasp_array)
+        self.marker_pub.publish(markers)
+
+    def generate_grasp_candidates(self, object_pose):
+        """Generate multiple grasp candidates"""
+        grasps = []
+
+        # Top-down grasps (multiple angles)
+        for angle in np.linspace(0, np.pi, 8):
+            grasp = PoseStamped()
+            grasp.header.frame_id = 'camera_link'
+
+            # Position: above object
+            grasp.pose.position.x = object_pose.position.x
+            grasp.pose.position.y = object_pose.position.y
+            grasp.pose.position.z = object_pose.position.z + self.approach_distance
+
+            # Orientation: gripper pointing down, rotated
+            r = Rotation.from_euler('xyz', [np.pi, 0, angle])
+            quat = r.as_quat()
+            grasp.pose.orientation.x = quat[0]
+            grasp.pose.orientation.y = quat[1]
+            grasp.pose.orientation.z = quat[2]
+            grasp.pose.orientation.w = quat[3]
+
+            grasps.append(grasp.pose)
+
+        # Side grasps
+        for angle in [0, np.pi/2, np.pi, 3*np.pi/2]:
+            grasp = PoseStamped()
+            grasp.header.frame_id = 'camera_link'
+
+            offset_x = self.approach_distance * np.cos(angle)
+            offset_y = self.approach_distance * np.sin(angle)
+
+            grasp.pose.position.x = object_pose.position.x + offset_x
+            grasp.pose.position.y = object_pose.position.y + offset_y
+            grasp.pose.position.z = object_pose.position.z
+
+            # Orientation: gripper pointing toward object
+            r = Rotation.from_euler('xyz', [0, np.pi/2, angle])
+            quat = r.as_quat()
+            grasp.pose.orientation.x = quat[0]
+            grasp.pose.orientation.y = quat[1]
+            grasp.pose.orientation.z = quat[2]
+            grasp.pose.orientation.w = quat[3]
+
+            grasps.append(grasp.pose)
+
+        return grasps
+
+    def score_grasps(self, grasps, object_pose):
+        """Score grasp candidates"""
+        scored = []
+
+        for grasp in grasps:
+            score = 0.0
+
+            # Distance to object (prefer closer)
+            dist = np.sqrt(
+                (grasp.position.x - object_pose.position.x)**2 +
+                (grasp.position.y - object_pose.position.y)**2 +
+                (grasp.position.z - object_pose.position.z)**2
+            )
+            score += 1.0 / (dist + 0.1)
+
+            # Prefer top-down grasps (higher Z)
+            if grasp.position.z > object_pose.position.z:
+                score += 2.0
+
+            # Check reachability (simple workspace check)
+            if self.is_reachable(grasp):
+                score += 5.0
+
+            scored.append((score, grasp))
+
+        # Sort by score (descending)
+        scored.sort(key=lambda x: x[0], reverse=True)
+
+        return [g[1] for g in scored]
+
+    def is_reachable(self, grasp):
+        """Check if grasp is within robot workspace"""
+        # Simple cylinder workspace
+        r = np.sqrt(grasp.position.x**2 + grasp.position.y**2)
+        z = grasp.position.z
+
+        return (0.2 < r < 0.8) and (-0.2 < z < 0.8)
+
+    def create_grasp_marker(self, grasp, marker_id):
+        """Create visualization marker for grasp"""
+        marker = Marker()
+        marker.header.frame_id = 'camera_link'
+        marker.header.stamp = self.get_clock().now().to_msg()
+        marker.id = marker_id
+        marker.type = Marker.ARROW
+        marker.action = Marker.ADD
+
+        marker.pose = grasp
+        marker.scale.x = 0.1  # Arrow length
+        marker.scale.y = 0.01  # Arrow width
+        marker.scale.z = 0.01
+
+        marker.color.r = 0.0
+        marker.color.g = 1.0
+        marker.color.b = 0.0
+        marker.color.a = 0.8
+
+        return marker
+
+def main():
+    rclpy.init()
+    node = GraspPlanner()
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+---
+
+### Step 4: Motion Planning and Execution
+
+#### 4.1 Create MoveIt Interface
+
+Create `vision_manipulation/moveit_interface.py`:
+
+```python
+#!/usr/bin/env python3
+import rclpy
+from rclpy.node import Node
+from geometry_msgs.msg import PoseStamped, Pose
+from moveit_msgs.msg import MoveItErrorCodes
+from moveit.planning import MoveItPy
+from moveit.core.robot_state import RobotState
+import numpy as np
+
+class MoveItInterface(Node):
+    def __init__(self):
+        super().__init__('moveit_interface')
+
+        # Initialize MoveIt
+        self.moveit = MoveItPy(node_name='moveit_py')
+        self.arm = self.moveit.get_planning_component('manipulator')
+
+        # Subscribe to grasp poses
+        self.grasp_sub = self.create_subscription(
+            PoseStamped, '/target_grasp', self.grasp_callback, 10)
+
+        self.get_logger().info('MoveIt Interface initialized')
+
+    def grasp_callback(self, msg):
+        """Execute pick and place"""
+        target_pose = msg.pose
+
+        self.get_logger().info('Executing pick and place...')
+
+        # 1. Move to pre-grasp pose
+        pre_grasp = self.get_pre_grasp_pose(target_pose)
+        if not self.move_to_pose(pre_grasp):
+            self.get_logger().error('Failed to reach pre-grasp')
+            return
+
+        # 2. Move to grasp pose
+        if not self.move_to_pose(target_pose):
+            self.get_logger().error('Failed to reach grasp')
+            return
+
+        # 3. Close gripper
+        self.close_gripper()
+
+        # 4. Lift object
+        lift_pose = target_pose
+        lift_pose.position.z += 0.1
+        if not self.move_to_pose(lift_pose):
+            self.get_logger().error('Failed to lift object')
+            return
+
+        # 5. Move to place location
+        place_pose = Pose()
+        place_pose.position.x = 0.3
+        place_pose.position.y = -0.3
+        place_pose.position.z = 0.2
+        place_pose.orientation.w = 1.0
+
+        if not self.move_to_pose(place_pose):
+            self.get_logger().error('Failed to reach place')
+            return
+
+        # 6. Open gripper
+        self.open_gripper()
+
+        # 7. Return to home
+        self.move_to_home()
+
+        self.get_logger().info('Pick and place completed!')
+
+    def move_to_pose(self, target_pose):
+        """Plan and execute motion to target pose"""
+        self.arm.set_goal_state(pose_stamped_msg=target_pose,
+                                pose_link='tool0')
+
+        # Plan
+        plan_result = self.arm.plan()
+
+        if plan_result.error_code != MoveItErrorCodes.SUCCESS:
+            self.get_logger().warn(f'Planning failed: {plan_result.error_code}')
+            return False
+
+        # Execute
+        robot_trajectory = plan_result.trajectory
+        success = self.moveit.execute(robot_trajectory, blocking=True)
+
+        return success
+
+    def get_pre_grasp_pose(self, grasp_pose):
+        """Get pre-grasp pose (offset from grasp)"""
+        pre_grasp = Pose()
+        pre_grasp.position.x = grasp_pose.position.x
+        pre_grasp.position.y = grasp_pose.position.y
+        pre_grasp.position.z = grasp_pose.position.z + 0.1  # 10cm above
+        pre_grasp.orientation = grasp_pose.orientation
+
+        return pre_grasp
+
+    def close_gripper(self):
+        """Close gripper"""
+        self.get_logger().info('Closing gripper')
+        # Send gripper command (implementation depends on gripper)
+        # For simulation, this might be a service call or action
+        pass
+
+    def open_gripper(self):
+        """Open gripper"""
+        self.get_logger().info('Opening gripper')
+        pass
+
+    def move_to_home(self):
+        """Return to home position"""
+        self.arm.set_goal_state(configuration_name='home')
+        plan_result = self.arm.plan()
+
+        if plan_result.error_code == MoveItErrorCodes.SUCCESS:
+            self.moveit.execute(plan_result.trajectory, blocking=True)
+
+def main():
+    rclpy.init()
+    node = MoveItInterface()
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+---
+
+### Step 5: Integration and Testing
+
+#### 5.1 Create Launch File
+
+Create `launch/vision_manipulation.launch.py`:
+
+```python
+from launch import LaunchDescription
+from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch_ros.actions import Node
+from launch.substitutions import PathJoinSubstitution, LaunchConfiguration
+from launch_ros.substitutions import FindPackageShare
+import os
+from ament_index_python.packages import get_package_share_directory
+
+def generate_launch_description():
+    pkg_share = get_package_share_directory('vision_manipulation')
+
+    # MoveIt launch
+    moveit_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource([
+            PathJoinSubstitution([
+                FindPackageShare('ur_moveit_config'),
+                'launch',
+                'ur_moveit.launch.py'
+            ])
+        ])
+    )
+
+    # Gazebo with world
+    gazebo = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource([
+            PathJoinSubstitution([
+                FindPackageShare('gazebo_ros'),
+                'launch',
+                'gazebo.launch.py'
+            ])
+        ]),
+        launch_arguments={
+            'world': os.path.join(pkg_share, 'worlds', 'manipulation_world.sdf')
+        }.items()
+    )
+
+    # Vision nodes
+    object_detector = Node(
+        package='vision_manipulation',
+        executable='object_detector',
+        name='object_detector',
+        output='screen'
+    )
+
+    pointcloud_processor = Node(
+        package='vision_manipulation',
+        executable='pointcloud_processor',
+        name='pointcloud_processor',
+        output='screen'
+    )
+
+    grasp_planner = Node(
+        package='vision_manipulation',
+        executable='grasp_planner',
+        name='grasp_planner',
+        output='screen'
+    )
+
+    moveit_interface = Node(
+        package='vision_manipulation',
+        executable='moveit_interface',
+        name='moveit_interface',
+        output='screen'
+    )
+
+    # RViz
+    rviz = Node(
+        package='rviz2',
+        executable='rviz2',
+        name='rviz2',
+        arguments=['-d', os.path.join(pkg_share, 'config', 'vision_manipulation.rviz')],
+        output='screen'
+    )
+
+    return LaunchDescription([
+        moveit_launch,
+        gazebo,
+        object_detector,
+        pointcloud_processor,
+        grasp_planner,
+        moveit_interface,
+        rviz
+    ])
+```
+
+#### 5.2 Create Test Script
+
+Create `test/test_pick_place.py`:
+
+```python
+#!/usr/bin/env python3
+import rclpy
+from rclpy.node import Node
+from geometry_msgs.msg import PoseStamped, PoseArray
+import time
+
+class PickPlaceTester(Node):
+    def __init__(self):
+        super().__init__('pick_place_tester')
+
+        # Subscribe to detections
+        self.detection_sub = self.create_subscription(
+            PoseArray, '/detected_objects', self.detection_callback, 10)
+
+        # Publisher for target grasp
+        self.target_pub = self.create_publisher(
+            PoseStamped, '/target_grasp', 10)
+
+        self.detections_received = False
+        self.latest_detections = None
+
+    def detection_callback(self, msg):
+        self.detections_received = True
+        self.latest_detections = msg
+        self.get_logger().info(f'Detected {len(msg.poses)} objects')
+
+    def test_detection(self):
+        """Test object detection"""
+        self.get_logger().info('Testing object detection...')
+
+        start_time = time.time()
+        while time.time() - start_time < 5.0:
+            rclpy.spin_once(self, timeout_sec=0.1)
+            if self.detections_received:
+                break
+
+        assert self.detections_received, "No objects detected"
+        assert len(self.latest_detections.poses) > 0, "No object poses"
+
+        self.get_logger().info('✓ Object detection working')
+
+    def test_pick_place(self):
+        """Test complete pick and place"""
+        if not self.latest_detections or len(self.latest_detections.poses) == 0:
+            self.get_logger().warn('No objects to pick')
+            return
+
+        # Select first detected object
+        target = PoseStamped()
+        target.header = self.latest_detections.header
+        target.pose = self.latest_detections.poses[0]
+
+        self.get_logger().info('Sending grasp target...')
+        self.target_pub.publish(target)
+
+        # Wait for execution
+        time.sleep(15.0)  # Pick-place takes ~10-15 seconds
+
+        self.get_logger().info('✓ Pick and place test complete')
+
+def main():
+    rclpy.init()
+    tester = PickPlaceTester()
+
+    try:
+        tester.test_detection()
+        tester.test_pick_place()
+        tester.get_logger().info('All tests passed!')
+    except AssertionError as e:
+        tester.get_logger().error(f'Test failed: {e}')
+    finally:
+        tester.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+#### 5.3 Build and Run
+
+```bash
+cd ~/ros2_ws
+colcon build --packages-select vision_manipulation
+source install/setup.bash
+
+# Launch complete system
+ros2 launch vision_manipulation vision_manipulation.launch.py
+
+# In new terminal, run test
+ros2 run vision_manipulation test_pick_place
+
+# Monitor topics
+ros2 topic echo /detected_objects
+ros2 topic echo /grasp_poses
+```
+
+## Expected Outcomes
+
+After completing this project, you'll have:
+- A functional vision-based manipulation system
+- Real-time object detection and pose estimation
+- Automated pick-and-place capabilities
+- Robustness to perception and control errors
+
+## Next Steps
+
+Once you've completed this project, you can:
+- Add dexterous in-hand manipulation
+- Implement learning-based grasping
+- Integrate force/torque sensing
+- Proceed to **Project 5: Complete Humanoid System** for full-body integration
+
+## Resources
+
+- [MoveIt 2 Documentation](https://moveit.picknik.ai/)
+- [OpenCV Documentation](https://docs.opencv.org/)
+- [Appendix B: Python Guide](/docs/appendices/appendix-b-python-guide)

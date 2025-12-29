@@ -1,0 +1,1028 @@
+---
+id: ch28-production
+title: Chapter 28 - Production & Deployment
+description: Plan robot production, testing, deployment, and maintenance workflows.
+sidebar_label: Ch 28. Production
+sidebar_position: 4
+keywords: [production, deployment, testing, maintenance, lifecycle]
+difficulty: intermediate
+estimatedReadingTime: 25
+---
+
+# Chapter 28: Production & Deployment
+
+## Learning Objectives
+
+By the end of this chapter, you will be able to:
+- Plan robot production workflows from prototyping to mass manufacturing
+- Implement comprehensive testing and validation procedures (ISO standards)
+- Deploy robots in real-world environments with pilot programs
+- Establish maintenance and lifecycle management processes
+- Calculate total cost of ownership (TCO) and ROI for robot deployments
+
+## Introduction
+
+The journey from robot prototype to deployed fleet requires careful planning across manufacturing, quality assurance, deployment strategy, and ongoing support. **2025 is regarded as "the year of mass production"** for humanoid robots, marking a critical turning point from prototype demonstrations to large-scale commercial deployments.
+
+### Market Context (2025)
+
+**Production Milestones:**
+- **18,000 humanoid units** expected to ship in 2025
+- Leading companies achieving **small-batch deliveries** (hundreds to thousands of units)
+- **Full-scale adoption** forecasted to begin by 2028
+
+**Major Players' Production Plans:**
+- **Tesla Optimus**: Targeting several thousand units in 2025, scaling to 500,000/year by 2027
+- **Figure AI**: Pilot deployments at BMW factories with Figure 02
+- **Agility Robotics Digit**: First humanoid robot in paid production (GXO Logistics)
+- **1X NEO**: Early access deliveries starting 2026
+
+**Current Limitations:**
+- Supply chain bottlenecks
+- Need to prove commercial viability
+- Transition from R&D to scaled manufacturing infrastructure
+
+## Production Planning
+
+### Phase 1: Prototyping (1-10 units)
+
+**Objective**: Validate design and functionality
+
+**Activities:**
+1. **Mechanical Prototyping**:
+   - 3D printing for plastic parts (FDM, SLA)
+   - CNC machining for metal components
+   - Manual assembly
+   - Iterative design refinement
+
+2. **Electronics Integration**:
+   - Breadboard testing of circuits
+   - Hand-soldered PCBs
+   - Off-the-shelf components (motors, sensors, computers)
+
+3. **Software Development**:
+   - Core control algorithms
+   - Sensor integration
+   - Safety systems
+   - Simulation validation
+
+**Timeline**: 6-18 months
+**Cost per unit**: $100,000-$500,000
+**Team size**: 5-20 engineers
+
+### Phase 2: Pilot Production (10-100 units)
+
+**Objective**: Refine for manufacturability and reliability
+
+**Activities:**
+1. **Design for Manufacturing (DFM)**:
+   - Reduce part count (combine components)
+   - Standardize fasteners and connectors
+   - Eliminate hand-fitting (tolerances tightened)
+   - Material selection for cost/performance balance
+
+2. **Supplier Development**:
+   - Qualify component suppliers
+   - Negotiate volume pricing
+   - Establish quality agreements
+   - Develop backup sources
+
+3. **Assembly Process Design**:
+   - Document assembly procedures
+   - Design jigs and fixtures
+   - Identify bottleneck operations
+   - Implement basic QC checkpoints
+
+4. **Pilot Deployments**:
+   - Deploy to friendly customers (early adopters)
+   - Collect failure data and usage patterns
+   - Iterate on design based on real-world feedback
+
+**Timeline**: 12-24 months
+**Cost per unit**: $50,000-$150,000
+**Team size**: 20-50 people
+
+**Example: Tesla Optimus V2 (Mid-2025)**
+- Capacity: 10,000 units/month planned
+- Production cost: ~$20,000/unit
+- Focus: Data collection and internal Tesla facility use
+
+### Phase 3: Mass Production (1,000+ units)
+
+**Objective**: Scale to commercial volumes with low cost
+
+**Activities:**
+
+**1. Production Line Design:**
+
+```
+Raw Materials → Fabrication → Sub-Assembly → Final Assembly → Testing → Packaging
+                     ↓              ↓               ↓             ↓
+                  Inspection    Inspection      Inspection    Burn-in
+```
+
+**Workstations Example (Humanoid Robot):**
+1. **Frame Assembly** (2 workers): Torso, limb structures
+2. **Motor Installation** (3 workers): Install 20-30 actuators
+3. **Wiring Harness** (2 workers): Route cables, connect sensors
+4. **Electronics Integration** (2 workers): Mount computers, battery, BMS
+5. **Software Flash** (1 worker): Load firmware and OS
+6. **Functional Test** (2 workers): Joint calibration, sensor checks
+7. **Burn-in** (automated): 8-hour stress test
+8. **Final QC** (1 worker): Full system validation
+9. **Packaging** (1 worker): Crate and ship
+
+**Cycle Time**: 2-4 hours per unit (with 10-20 parallel lines)
+**Throughput**: 50-200 units/day per facility
+
+**2. Automated Manufacturing:**
+- CNC machining for precision parts
+- Injection molding for plastic housings
+- SMT (Surface Mount Technology) for PCBs
+- Automated cable cutting and crimping
+- Robotic assembly for repetitive tasks
+
+**3. Quality Management System (QMS):**
+- ISO 9001:2015 certification
+- Statistical Process Control (SPC)
+- Supplier audits
+- Corrective and Preventive Actions (CAPA)
+
+**4. Supply Chain Management:**
+- Just-In-Time (JIT) inventory for high-volume parts
+- Safety stock for long-lead items (custom motors, sensors)
+- Multiple suppliers for critical components
+- Vertical integration for proprietary parts
+
+**Tesla Optimus Mass Production Target:**
+- **1 million units/year** production line in Fremont
+- Expected retail price: **$20,000-$30,000** per unit
+- Timeline: Full-scale production by 2027
+
+**Cost Breakdown (Estimated for Mass-Produced Humanoid):**
+```
+Bill of Materials (BOM):      $12,000
+- Actuators (28×): $7,000
+- Sensors: $1,500
+- Computing: $1,000
+- Battery: $800
+- Structure & misc: $1,700
+
+Manufacturing Labor:           $2,000
+Overhead (facility, equipment): $3,000
+Testing & QC:                  $1,000
+-----------------------------------------
+Total Manufacturing Cost:      $18,000
+
+Markup (40%):                  $7,200
+-----------------------------------------
+Retail Price:                  $25,200
+```
+
+## Testing and Validation
+
+Comprehensive testing ensures robots are safe, reliable, and compliant before deployment.
+
+### Testing Standards
+
+**ISO 10218-1:2025**: Industrial robot safety (design)
+**ISO 10218-2:2025**: Robot system integration safety
+**ISO 9283**: Robot performance and accuracy
+**ISO/TS 15066**: Collaborative robot power and force limits
+**IEC 60601** (if medical): Medical device electrical safety
+**EMC Standards**: Electromagnetic compatibility (immunity and emissions)
+
+### Testing Hierarchy
+
+#### 1. Component-Level Testing
+
+**Actuators:**
+- Torque-speed curves
+- Efficiency measurements
+- Thermal limits (continuous operation)
+- Encoder accuracy
+- Failure modes (overload, overheat)
+
+**Sensors:**
+- Accuracy and repeatability
+- Range and resolution
+- Calibration stability
+- Environmental robustness (temperature, humidity)
+
+**Electronics:**
+- Power supply stability
+- Communication integrity (CAN bus, Ethernet)
+- EMI/EMC compliance
+- Thermal performance
+
+**Test Automation Example:**
+
+```python
+import time
+import matplotlib.pyplot as plt
+
+class ActuatorTestBench:
+    """Automated actuator testing"""
+
+    def __init__(self, motor_controller, load_cell, encoder):
+        self.motor = motor_controller
+        self.load_cell = load_cell
+        self.encoder = encoder
+
+        self.test_results = {
+            'torque_speed': [],
+            'efficiency': [],
+            'thermal': []
+        }
+
+    def test_torque_speed_curve(self):
+        """Measure torque vs. speed"""
+
+        print("Running torque-speed test...")
+
+        speeds = [10, 20, 30, 40, 50, 60]  # RPM
+        torques = []
+
+        for target_speed in speeds:
+            # Command speed
+            self.motor.set_velocity(target_speed * (2 * 3.14159 / 60))  # Convert to rad/s
+
+            # Wait for steady state
+            time.sleep(2.0)
+
+            # Measure torque
+            torque = self.load_cell.read_torque()
+            torques.append(torque)
+
+            self.test_results['torque_speed'].append({
+                'speed_rpm': target_speed,
+                'torque_nm': torque
+            })
+
+        # Plot
+        plt.figure()
+        plt.plot(speeds, torques, 'o-')
+        plt.xlabel('Speed (RPM)')
+        plt.ylabel('Torque (Nm)')
+        plt.title('Actuator Torque-Speed Curve')
+        plt.grid(True)
+        plt.savefig('torque_speed_curve.png')
+
+        return self.test_results['torque_speed']
+
+    def test_efficiency(self):
+        """Measure motor efficiency"""
+
+        print("Running efficiency test...")
+
+        speeds = [20, 40, 60]
+        efficiencies = []
+
+        for target_speed in speeds:
+            self.motor.set_velocity(target_speed * (2 * 3.14159 / 60))
+            time.sleep(2.0)
+
+            # Electrical input power
+            voltage = self.motor.get_voltage()
+            current = self.motor.get_current()
+            power_in = voltage * current
+
+            # Mechanical output power
+            speed_rad_s = self.encoder.get_velocity()
+            torque = self.load_cell.read_torque()
+            power_out = speed_rad_s * torque
+
+            # Efficiency
+            efficiency = (power_out / power_in) * 100 if power_in > 0 else 0
+            efficiencies.append(efficiency)
+
+            self.test_results['efficiency'].append({
+                'speed_rpm': target_speed,
+                'efficiency_percent': efficiency
+            })
+
+            print(f"Speed: {target_speed} RPM, Efficiency: {efficiency:.1f}%")
+
+        return self.test_results['efficiency']
+
+    def test_thermal_limits(self, duration_minutes=30):
+        """Run motor at max load and monitor temperature"""
+
+        print(f"Running thermal test ({duration_minutes} min)...")
+
+        self.motor.set_torque(self.motor.max_continuous_torque)
+
+        start_time = time.time()
+        temperatures = []
+        times = []
+
+        while (time.time() - start_time) < duration_minutes * 60:
+            temp = self.motor.get_temperature()
+            elapsed = (time.time() - start_time) / 60
+
+            temperatures.append(temp)
+            times.append(elapsed)
+
+            self.test_results['thermal'].append({
+                'time_min': elapsed,
+                'temperature_c': temp
+            })
+
+            if temp > self.motor.thermal_limit:
+                print(f"WARNING: Thermal limit exceeded ({temp}°C)")
+                break
+
+            time.sleep(10)  # Sample every 10 seconds
+
+        self.motor.stop()
+
+        # Plot
+        plt.figure()
+        plt.plot(times, temperatures, 'r-')
+        plt.xlabel('Time (minutes)')
+        plt.ylabel('Temperature (°C)')
+        plt.title('Thermal Performance Test')
+        plt.axhline(y=self.motor.thermal_limit, color='k', linestyle='--', label='Limit')
+        plt.legend()
+        plt.grid(True)
+        plt.savefig('thermal_test.png')
+
+        return self.test_results['thermal']
+
+    def generate_report(self):
+        """Generate test report"""
+
+        report = f"""
+=== ACTUATOR TEST REPORT ===
+
+Motor: {self.motor.model}
+Serial Number: {self.motor.serial_number}
+Test Date: {time.strftime('%Y-%m-%d')}
+
+1. TORQUE-SPEED CURVE:
+{self._format_test_data(self.test_results['torque_speed'])}
+
+2. EFFICIENCY:
+{self._format_test_data(self.test_results['efficiency'])}
+
+3. THERMAL PERFORMANCE:
+Max Temperature: {max([t['temperature_c'] for t in self.test_results['thermal']]):.1f}°C
+Thermal Limit: {self.motor.thermal_limit}°C
+Result: {'PASS' if max([t['temperature_c'] for t in self.test_results['thermal']]) < self.motor.thermal_limit else 'FAIL'}
+
+=== END REPORT ===
+"""
+        return report
+
+    def _format_test_data(self, data):
+        """Format test data for report"""
+        lines = []
+        for item in data:
+            line = ', '.join([f"{k}: {v}" for k, v in item.items()])
+            lines.append(f"  {line}")
+        return '\n'.join(lines)
+
+# Usage
+# test_bench = ActuatorTestBench(motor_controller, load_cell, encoder)
+# test_bench.test_torque_speed_curve()
+# test_bench.test_efficiency()
+# test_bench.test_thermal_limits(duration_minutes=30)
+# print(test_bench.generate_report())
+```
+
+#### 2. Subsystem Testing
+
+**Motion Control:**
+- Joint trajectory tracking accuracy
+- Force control compliance
+- Coordinated multi-joint movements
+- Singularity avoidance
+
+**Navigation:**
+- SLAM accuracy (mapping error)
+- Localization precision
+- Obstacle avoidance reliability
+- Path planning optimality
+
+**Perception:**
+- Object detection accuracy (mAP)
+- Depth estimation error
+- Sensor fusion performance
+- Lighting robustness
+
+#### 3. System Integration Testing
+
+**Full Robot Validation:**
+
+1. **Functional Tests:**
+   - All joints move through full range of motion
+   - Sensors provide valid data
+   - Software boots and initializes correctly
+   - Communication between subsystems works
+
+2. **Performance Tests (ISO 9283):**
+   - **Pose Accuracy**: ±2mm typical for manipulator end-effector
+   - **Pose Repeatability**: ±0.5mm
+   - **Path Accuracy**: ±5mm along trajectory
+   - **Speed**: Measured vs. specified
+
+3. **Safety Tests (ISO 10218 / TS 15066):**
+   - Emergency stop latency (`<50ms`)
+   - Protective stop (collision detection)
+   - Speed and separation monitoring
+   - Power and force limiting (collaborative mode)
+
+4. **Environmental Tests:**
+   - Temperature: -10°C to +45°C operation
+   - Humidity: 20% to 80% RH
+   - Vibration and shock resistance
+   - IP rating (dust/water ingress)
+
+5. **Endurance Testing (Burn-in):**
+   - 8-48 hours continuous operation
+   - Cycling through all functions
+   - Monitoring for failures, thermal issues
+   - Detects "infant mortality" defects
+
+**Pass/Fail Criteria Example:**
+
+```python
+class SystemValidation:
+    """System-level validation tests"""
+
+    def __init__(self, robot_interface):
+        self.robot = robot_interface
+        self.test_log = []
+
+    def run_all_tests(self):
+        """Execute complete validation suite"""
+
+        tests = [
+            ('Joint Range of Motion', self.test_joint_rom),
+            ('Emergency Stop', self.test_emergency_stop),
+            ('Force Limiting', self.test_force_limiting),
+            ('Navigation Accuracy', self.test_navigation),
+            ('Object Detection', self.test_object_detection),
+            ('Endurance', self.test_endurance)
+        ]
+
+        results = {}
+        for test_name, test_func in tests:
+            print(f"\nRunning: {test_name}")
+            result = test_func()
+            results[test_name] = result
+            status = "PASS" if result['pass'] else "FAIL"
+            print(f"Result: {status}")
+
+            self.test_log.append({
+                'test': test_name,
+                'result': result,
+                'timestamp': time.time()
+            })
+
+        # Overall pass/fail
+        all_passed = all([r['pass'] for r in results.values()])
+        print(f"\n{'='*50}")
+        print(f"Overall Result: {'PASS' if all_passed else 'FAIL'}")
+        print(f"{'='*50}")
+
+        return all_passed, results
+
+    def test_joint_rom(self):
+        """Test all joints move through full range"""
+
+        for joint_id in range(self.robot.num_joints):
+            min_pos, max_pos = self.robot.get_joint_limits(joint_id)
+
+            # Move to min
+            self.robot.move_joint(joint_id, min_pos)
+            time.sleep(2.0)
+            actual_pos = self.robot.get_joint_position(joint_id)
+
+            if abs(actual_pos - min_pos) > 0.05:  # 0.05 rad tolerance
+                return {'pass': False, 'reason': f'Joint {joint_id} failed to reach min position'}
+
+            # Move to max
+            self.robot.move_joint(joint_id, max_pos)
+            time.sleep(2.0)
+            actual_pos = self.robot.get_joint_position(joint_id)
+
+            if abs(actual_pos - max_pos) > 0.05:
+                return {'pass': False, 'reason': f'Joint {joint_id} failed to reach max position'}
+
+        return {'pass': True, 'reason': 'All joints within range'}
+
+    def test_emergency_stop(self):
+        """Test emergency stop latency"""
+
+        # Start motion
+        self.robot.move_to_pose([1.0, 0.5, 0.3])
+        time.sleep(0.1)  # Allow motion to start
+
+        # Trigger e-stop
+        start_time = time.time()
+        self.robot.emergency_stop()
+
+        # Measure time to complete stop
+        while self.robot.is_moving():
+            time.sleep(0.001)
+
+        stop_time = time.time() - start_time
+
+        # Requirement: <50ms
+        passed = stop_time < 0.050
+
+        return {
+            'pass': passed,
+            'stop_time_ms': stop_time * 1000,
+            'requirement_ms': 50
+        }
+
+    def test_force_limiting(self):
+        """Test power and force limiting (ISO/TS 15066)"""
+
+        # Set force limit
+        force_limit = 150  # Newtons (for body region)
+        self.robot.set_force_limit(force_limit)
+
+        # Command movement into obstacle
+        self.robot.move_to_pose([0.5, 0.0, 0.3])
+
+        # Monitor force
+        max_force = 0
+        for _ in range(100):
+            force = self.robot.get_contact_force()
+            max_force = max(max_force, force)
+
+            if force > force_limit:
+                break
+
+            time.sleep(0.01)
+
+        # Check robot stopped
+        stopped = not self.robot.is_moving()
+
+        passed = max_force <= force_limit and stopped
+
+        return {
+            'pass': passed,
+            'max_force_n': max_force,
+            'limit_n': force_limit,
+            'stopped': stopped
+        }
+
+    def test_navigation(self):
+        """Test navigation accuracy"""
+
+        # Define waypoints
+        waypoints = [
+            (1.0, 2.0, 0.0),
+            (3.0, 2.0, 1.57),
+            (3.0, 4.0, 3.14)
+        ]
+
+        max_error = 0
+        for target in waypoints:
+            self.robot.navigate_to(target)
+
+            # Wait for completion
+            while self.robot.is_navigating():
+                time.sleep(0.1)
+
+            # Measure error
+            actual = self.robot.get_position()
+            error = ((actual[0] - target[0])**2 + (actual[1] - target[1])**2)**0.5
+
+            max_error = max(max_error, error)
+
+        # Requirement: <10cm positioning error
+        passed = max_error < 0.10
+
+        return {
+            'pass': passed,
+            'max_error_m': max_error,
+            'requirement_m': 0.10
+        }
+
+    def test_object_detection(self):
+        """Test object detection accuracy"""
+
+        # Load test dataset with ground truth
+        test_images = self.load_test_dataset()
+
+        correct_detections = 0
+        total_objects = 0
+
+        for image, ground_truth in test_images:
+            detections = self.robot.detect_objects(image)
+
+            # Compare detections to ground truth
+            matches = self.match_detections(detections, ground_truth)
+            correct_detections += matches
+            total_objects += len(ground_truth)
+
+        accuracy = correct_detections / total_objects if total_objects > 0 else 0
+
+        # Requirement: >90% detection accuracy
+        passed = accuracy > 0.90
+
+        return {
+            'pass': passed,
+            'accuracy': accuracy,
+            'requirement': 0.90
+        }
+
+    def test_endurance(self, duration_hours=8):
+        """Run endurance test"""
+
+        print(f"Starting {duration_hours}-hour endurance test...")
+
+        start_time = time.time()
+        cycle_count = 0
+        errors = []
+
+        while (time.time() - start_time) < duration_hours * 3600:
+            try:
+                # Execute test cycle
+                self.robot.move_to_preset_pose('home')
+                self.robot.move_to_preset_pose('extended')
+                self.robot.navigate_to((1.0, 1.0, 0.0))
+                self.robot.navigate_to((0.0, 0.0, 0.0))
+
+                cycle_count += 1
+
+                if cycle_count % 10 == 0:
+                    elapsed_hours = (time.time() - start_time) / 3600
+                    print(f"Cycles completed: {cycle_count}, Elapsed: {elapsed_hours:.1f}h")
+
+            except Exception as e:
+                errors.append({
+                    'time': time.time() - start_time,
+                    'error': str(e)
+                })
+
+        passed = len(errors) == 0
+
+        return {
+            'pass': passed,
+            'cycles_completed': cycle_count,
+            'errors': errors,
+            'duration_hours': duration_hours
+        }
+
+    def load_test_dataset(self):
+        """Load test images with ground truth"""
+        # Placeholder
+        return []
+
+    def match_detections(self, detections, ground_truth):
+        """Match detections to ground truth"""
+        # Simplified - real implementation uses IOU matching
+        return len(detections)
+
+# Usage
+# validator = SystemValidation(robot_interface)
+# passed, results = validator.run_all_tests()
+```
+
+### Digital Twins for Validation
+
+**2025 Adoption:**
+- **39.4%** of companies using digital twins extensively in production
+- **51.7%** in pilot programs
+- **>90%** of industry designing and validating robots virtually first
+
+**Benefits:**
+- Test edge cases without physical risk
+- Optimize parameters faster (thousands of simulations)
+- Train AI models in simulation before deployment
+- Validate safety systems
+
+**Platforms:**
+- NVIDIA Isaac Sim / Omniverse
+- Gazebo / Ignition
+- Unity Robotics
+- MuJoCo
+
+## Deployment Strategy
+
+### Pilot Program Approach
+
+Most successful deployments follow a phased rollout:
+
+**Phase 1: Proof of Concept (1-5 robots, 3-6 months)**
+- Single location, controlled environment
+- Collect performance data
+- Identify integration challenges
+- Train operators
+- Measure actual ROI vs. projections
+
+**Phase 2: Limited Deployment (10-50 robots, 6-12 months)**
+- Multiple locations or expanded use cases
+- Refine operational procedures
+- Scale support infrastructure
+- Validate business case
+
+**Phase 3: Full-Scale Rollout (50+ robots, ongoing)**
+- Organization-wide deployment
+- Centralized fleet management
+- Continuous improvement program
+
+**Example: Agility Robotics Digit at GXO Logistics**
+- **Status**: First humanoid in paid production (2024-2025)
+- **Application**: Warehouse logistics, tote handling
+- **Rollout Plan**: Scaling fleets across additional GXO sites starting 2025
+
+### Deployment Checklist
+
+**Pre-Deployment:**
+- [ ] Site survey (floor conditions, WiFi coverage, charging locations)
+- [ ] Infrastructure installation (power, network, charging stations)
+- [ ] Safety risk assessment and mitigation plan
+- [ ] Operator training program completed
+- [ ] Integration with existing systems (WMS, ERP)
+- [ ] Spare parts inventory established
+- [ ] Support escalation procedures defined
+
+**During Deployment:**
+- [ ] Robot commissioning (mapping, calibration)
+- [ ] Shadow mode testing (robot observes, doesn't act)
+- [ ] Supervised operation (operator monitors closely)
+- [ ] Performance baseline established
+- [ ] Feedback collection from operators
+
+**Post-Deployment:**
+- [ ] Regular performance reviews (weekly → monthly)
+- [ ] Incident tracking and root cause analysis
+- [ ] Software update schedule
+- [ ] Preventive maintenance program
+- [ ] ROI measurement and reporting
+
+## Maintenance and Lifecycle Management
+
+### Preventive Maintenance Schedule
+
+| Component | Inspection Frequency | Typical Lifespan | Replacement Cost |
+|-----------|---------------------|------------------|------------------|
+| **Actuator bearings** | Every 500 hours | 5,000-10,000 hours | $50-$200/joint |
+| **Motor brushes** (if brushed) | Every 200 hours | 1,000 hours | $10-$30 |
+| **Encoders** | Annual calibration | 20,000+ hours | $100-$500 |
+| **Battery pack** | Monthly health check | 1,000-3,000 cycles | $500-$2,000 |
+| **Sensors (cameras, LiDAR)** | Quarterly cleaning/alignment | 5-10 years | $200-$5,000 |
+| **Tires/feet** | Every 100 hours | 2,000-5,000 hours | $50-$300 |
+| **Software updates** | Monthly | N/A | $0 (included) |
+
+### Remote Monitoring
+
+**Fleet Management Dashboard:**
+
+```python
+class FleetMonitor:
+    """Monitor deployed robot fleet"""
+
+    def __init__(self, database_connection):
+        self.db = database_connection
+
+    def get_fleet_status(self):
+        """Get real-time status of all robots"""
+
+        robots = self.db.query("SELECT * FROM robots")
+
+        status = {
+            'total': len(robots),
+            'operational': 0,
+            'charging': 0,
+            'maintenance': 0,
+            'error': 0,
+            'alerts': []
+        }
+
+        for robot in robots:
+            if robot['status'] == 'operational':
+                status['operational'] += 1
+            elif robot['status'] == 'charging':
+                status['charging'] += 1
+            elif robot['status'] == 'maintenance':
+                status['maintenance'] += 1
+            elif robot['status'] == 'error':
+                status['error'] += 1
+                status['alerts'].append({
+                    'robot_id': robot['id'],
+                    'error': robot['error_message']
+                })
+
+            # Check for issues
+            if robot['battery_soc'] < 20:
+                status['alerts'].append({
+                    'robot_id': robot['id'],
+                    'message': f"Low battery ({robot['battery_soc']}%)"
+                })
+
+            if robot['hours_since_maintenance'] > 500:
+                status['alerts'].append({
+                    'robot_id': robot['id'],
+                    'message': f"Maintenance due ({robot['hours_since_maintenance']}h)"
+                })
+
+        return status
+
+    def get_performance_metrics(self, robot_id, period_days=7):
+        """Get robot performance over time"""
+
+        data = self.db.query(f"""
+            SELECT date, uptime, tasks_completed, errors
+            FROM robot_daily_stats
+            WHERE robot_id = '{robot_id}'
+            AND date >= DATE_SUB(NOW(), INTERVAL {period_days} DAY)
+            ORDER BY date
+        """)
+
+        metrics = {
+            'uptime_avg': sum([d['uptime'] for d in data]) / len(data) if data else 0,
+            'tasks_per_day_avg': sum([d['tasks_completed'] for d in data]) / len(data) if data else 0,
+            'error_rate': sum([d['errors'] for d in data]) / sum([d['tasks_completed'] for d in data]) if data else 0,
+            'trend': self.calculate_trend(data)
+        }
+
+        return metrics
+
+    def calculate_trend(self, data):
+        """Calculate performance trend"""
+        if len(data) < 2:
+            return 'stable'
+
+        recent_uptime = sum([d['uptime'] for d in data[-3:]]) / 3
+        older_uptime = sum([d['uptime'] for d in data[:3]]) / 3
+
+        if recent_uptime > older_uptime * 1.05:
+            return 'improving'
+        elif recent_uptime < older_uptime * 0.95:
+            return 'declining'
+        else:
+            return 'stable'
+
+    def predict_maintenance_needs(self, robot_id):
+        """Predict upcoming maintenance requirements"""
+
+        robot = self.db.query(f"SELECT * FROM robots WHERE id = '{robot_id}'")[0]
+
+        needs = []
+
+        # Battery
+        if robot['battery_cycles'] > 800:
+            needs.append({
+                'component': 'Battery',
+                'urgency': 'high',
+                'estimated_weeks': 4
+            })
+
+        # Actuators
+        if robot['total_hours'] > 4500:
+            needs.append({
+                'component': 'Actuator bearings',
+                'urgency': 'medium',
+                'estimated_weeks': 12
+            })
+
+        # Software
+        if robot['software_version'] != self.get_latest_version():
+            needs.append({
+                'component': 'Software update',
+                'urgency': 'low',
+                'estimated_weeks': 2
+            })
+
+        return needs
+
+    def get_latest_version(self):
+        """Get latest software version"""
+        return "v2.5.3"  # Placeholder
+
+# Usage
+# monitor = FleetMonitor(database_connection)
+# status = monitor.get_fleet_status()
+# print(f"Fleet: {status['operational']}/{status['total']} operational")
+# for alert in status['alerts']:
+#     print(f"Alert: {alert}")
+```
+
+### Total Cost of Ownership (TCO)
+
+**5-Year TCO Example (Service Robot in Hotel):**
+
+```
+Initial Investment:
+- Robot hardware: $50,000
+- Installation & integration: $10,000
+- Training: $5,000
+Subtotal: $65,000
+
+Annual Operating Costs:
+- Maintenance & repairs: $5,000
+- Electricity: $500
+- Software subscriptions: $2,000
+- Support contracts: $3,000
+Annual subtotal: $10,500
+
+5-Year Total: $65,000 + ($10,500 × 5) = $117,500
+
+Cost per operational hour (4,000 hours/year):
+$117,500 / (5 years × 4,000 hours) = $5.88/hour
+
+Labor replacement savings:
+Human hourly cost: $20/hour
+Robot hourly cost: $5.88/hour
+Savings: $14.12/hour
+
+ROI: ($14.12 × 20,000 hours - $117,500) / $117,500 = 140% over 5 years
+Payback period: 2.3 years
+```
+
+## Key Takeaways
+
+- **2025 is the mass production inflection point** for humanoid robots, with 18,000 units expected to ship
+- **Production scaling** requires transition from manual assembly to automated manufacturing with strict quality control
+- **Comprehensive testing** (ISO standards) ensures safety and reliability before deployment
+- **Digital twins** are now standard (>90% industry adoption) for validation before physical testing
+- **Phased deployment** (pilot → limited → full-scale) reduces risk and enables iterative improvement
+- **Maintenance and monitoring** critical for fleet management and maximizing uptime
+
+## Practice Exercises
+
+### Exercise 1: Production Cost Analysis
+
+**Objective**: Calculate manufacturing cost and pricing for robot
+
+**Requirements:**
+- Create Bill of Materials (BOM) for robot design
+- Estimate labor hours per assembly step
+- Calculate overhead allocation
+- Determine retail price with target margin
+
+**Deliverables:**
+- Complete BOM spreadsheet
+- Cost model showing volume discounts
+- Break-even analysis
+
+### Exercise 2: Test Plan Development
+
+**Objective**: Design comprehensive test plan for robot product
+
+**Requirements:**
+- Define test cases for all subsystems
+- Specify pass/fail criteria (ISO standards)
+- Create test procedures and checklists
+- Plan endurance testing schedule
+
+**Deliverables:**
+- Test plan document
+- Automated test scripts
+- Test report template
+
+### Exercise 3: Deployment Planning
+
+**Objective**: Plan pilot deployment for service robot
+
+**Requirements:**
+- Define deployment phases and milestones
+- Create operator training program
+- Develop maintenance schedule
+- Calculate 5-year TCO and ROI
+
+**Deliverables:**
+- Project plan (Gantt chart)
+- Training materials
+- Maintenance checklist
+- Financial model
+
+## Further Reading
+
+### Standards Organizations
+- [ISO - International Organization for Standardization](https://www.iso.org)
+- [IEC - International Electrotechnical Commission](https://www.iec.ch)
+
+### Industry Resources
+- [Testing and Validation of Robotic Systems - ACM](https://dl.acm.org/doi/full/10.1145/3542945)
+- [Robot Process Validation Services Market Report](https://dataintelo.com/report/robot-process-validation-services-market)
+
+### Company Reports
+- [Tesla Optimus Production Roadmap - Humanoid Robotics Technology](https://humanoidroboticstechnology.com/industry-news/tesla-unveils-ambitious-optimus-humanoid-roadmap/)
+
+## Next Steps
+
+Continue to [Chapter 29: Embodied AI Research](../part-09-advanced/ch29-embodied-ai.mdx) to explore cutting-edge research in physical intelligence.
+
+For hardware reliability, see [Chapter 27: Hardware & Electronics](./ch27-hardware-electronics.mdx).
+
+---
+
+## Sources
+
+- [Innovative Humanoid Robots in 2025-2026 - Reality or Hype?](https://www.winssolutions.org/humanoid-robots-2025-2026-reality-hype/)
+- [Tesla Robot Price 2025: Everything About Optimus - Standard Bots](https://standardbots.com/blog/tesla-robot)
+- [Tesla Announces Ambitious Production Targets for Optimus](https://humanoidroboticstechnology.com/industry-news/tesla-announces-ambitious-production-targets-for-optimus-humanoid-robot/)
+- [Tesla Unveils Ambitious Optimus Humanoid Roadmap](https://humanoidroboticstechnology.com/industry-news/tesla-unveils-ambitious-optimus-humanoid-roadmap/)
+- [Robot Testing and Validation Essentials - Number Analytics](https://www.numberanalytics.com/blog/robot-testing-and-validation-essentials)
+- [Robotics Testing: Ensuring Safety and Compliance - Contract Laboratory](https://contractlaboratory.com/robot-testing/)
+- [Robot Process Validation Services Market 2033](https://dataintelo.com/report/robot-process-validation-services-market)
+- [8 Robotics Trends Transforming Industries in 2025](https://www.studiored.com/blog/eng/robotics-trends/)

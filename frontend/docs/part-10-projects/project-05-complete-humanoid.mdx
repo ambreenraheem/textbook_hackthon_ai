@@ -1,0 +1,667 @@
+---
+id: project-05-complete-humanoid
+title: Project 5 - Complete Humanoid System
+description: Build a full-stack humanoid robot integrating locomotion, manipulation, and whole-body control.
+sidebar_label: Proj 5. Complete Humanoid
+sidebar_position: 5
+difficulty: advanced
+estimatedDuration: 8-12 hours
+prerequisites:
+  - ch19-locomotion
+  - ch20-manipulation
+  - ch21-whole-body-control
+technologies: [ROS 2, Gazebo, MoveIt, Python, C++]
+learningOutcomes:
+  - Integrate locomotion and manipulation subsystems
+  - Implement whole-body control for complex tasks
+  - Handle task prioritization and constraints
+  - Deploy a complete humanoid robot system
+keywords: [humanoid robot, whole-body control, locomotion, manipulation, integration]
+---
+
+# Project 5: Complete Humanoid Robot System
+
+## Overview
+
+Synthesize all concepts from the textbook to build a complete humanoid robot system capable of walking, manipulating objects, and performing complex multi-task operations.
+
+## Prerequisites
+
+Before starting this project, you should have completed:
+- [Chapter 19: Bipedal Locomotion](/docs/part-06-motion-control/ch19-locomotion) - Walking and balance control
+- [Chapter 20: Robotic Manipulation](/docs/part-06-motion-control/ch20-manipulation) - Arm control and grasping
+- [Chapter 21: Whole-Body Control](/docs/part-06-motion-control/ch21-whole-body-control) - Coordinated control architectures
+
+## Learning Objectives
+
+By completing this project, you will:
+1. Integrate locomotion and manipulation controllers
+2. Implement whole-body inverse kinematics
+3. Handle task prioritization (balance > manipulation > secondary tasks)
+4. Coordinate multi-limb operations
+5. Implement dynamic walking while manipulating
+6. Handle environmental constraints and obstacles
+7. Deploy a complete humanoid robot system
+
+## Project Steps
+
+### Step 1: System Architecture Design
+
+#### 1.1 Create Complete Humanoid Package
+
+```bash
+cd ~/ros2_ws/src
+ros2 pkg create --build-type ament_cmake complete_humanoid \
+  --dependencies rclpy rclcpp std_msgs sensor_msgs geometry_msgs \
+  trajectory_msgs control_msgs moveit_msgs nav_msgs
+
+cd complete_humanoid
+mkdir -p urdf launch config scripts src behaviors state_machines
+```
+
+#### 1.2 System Architecture Overview
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                     Mission Planner                          │
+│         (High-level task decomposition & sequencing)         │
+└────────────────┬────────────────────────────────────────────┘
+                 │
+    ┌────────────┴────────────┐
+    │                         │
+┌───▼──────────┐      ┌──────▼────────┐
+│ Behavior     │      │ State Machine │
+│ Tree         │      │ Coordinator   │
+└───┬──────────┘      └──────┬────────┘
+    │                        │
+    └────────────┬───────────┘
+                 │
+    ┌────────────┴────────────┐
+    │                         │
+┌───▼──────────┐      ┌──────▼────────┐
+│ Locomotion   │      │ Manipulation  │
+│ Controller   │      │ Controller    │
+└───┬──────────┘      └──────┬────────┘
+    │                        │
+    └────────────┬───────────┘
+                 │
+         ┌───────▼────────┐
+         │ Whole-Body     │
+         │ Controller     │
+         └───────┬────────┘
+                 │
+         ┌───────▼────────┐
+         │ Hardware/      │
+         │ Simulation     │
+         └────────────────┘
+```
+
+### Step 2: Locomotion Controller
+
+#### 2.1 Create Walking Pattern Generator
+
+Create `src/walking_controller.cpp`:
+
+```cpp
+#include "rclcpp/rclcpp.hpp"
+#include "geometry_msgs/msg/twist.hpp"
+#include "trajectory_msgs/msg/joint_trajectory.hpp"
+#include <Eigen/Dense>
+
+class WalkingController : public rclcpp::Node
+{
+public:
+  WalkingController() : Node("walking_controller")
+  {
+    cmd_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
+      "/cmd_vel", 10,
+      std::bind(&WalkingController::cmd_callback, this, std::placeholders::_1));
+
+    traj_pub_ = this->create_publisher<trajectory_msgs::msg::JointTrajectory>(
+      "/walking_trajectory", 10);
+
+    timer_ = this->create_wall_timer(
+      std::chrono::milliseconds(10),
+      std::bind(&WalkingController::control_loop, this));
+
+    RCLCPP_INFO(this->get_logger(), "Walking Controller initialized");
+  }
+
+private:
+  void cmd_callback(const geometry_msgs::msg::Twist::SharedPtr msg)
+  {
+    target_vel_x_ = msg->linear.x;
+    target_vel_y_ = msg->angular.z;
+  }
+
+  void control_loop()
+  {
+    if (std::abs(target_vel_x_) < 0.01) return;
+
+    // Generate walking trajectory
+    phase_ += 0.01 / step_time_;
+    if (phase_ >= 1.0) {
+      phase_ -= 1.0;
+      swap_support_leg();
+    }
+
+    auto left_foot = compute_foot_trajectory("left", phase_);
+    auto right_foot = compute_foot_trajectory("right", phase_);
+
+    auto joint_traj = leg_ik(left_foot, right_foot);
+    traj_pub_->publish(joint_traj);
+  }
+
+  Eigen::Vector3d compute_foot_trajectory(const std::string& foot, double phase)
+  {
+    Eigen::Vector3d pos;
+    bool swing = (foot == "left") ? !left_support_ : left_support_;
+
+    if (swing) {
+      pos.x() = -0.1 + 0.2 * phase;
+      pos.z() = 0.05 * std::sin(phase * M_PI);
+      pos.y() = (foot == "left") ? 0.1 : -0.1;
+    } else {
+      pos.x() = 0.1;
+      pos.z() = 0.0;
+      pos.y() = (foot == "left") ? 0.1 : -0.1;
+    }
+
+    return pos;
+  }
+
+  trajectory_msgs::msg::JointTrajectory leg_ik(
+    const Eigen::Vector3d& left, const Eigen::Vector3d& right)
+  {
+    trajectory_msgs::msg::JointTrajectory traj;
+    traj.joint_names = {
+      "left_hip_pitch", "left_knee", "left_ankle",
+      "right_hip_pitch", "right_knee", "right_ankle"
+    };
+
+    trajectory_msgs::msg::JointTrajectoryPoint point;
+    point.positions = {
+      std::atan2(left.z(), left.x()), 0.3, -0.15,
+      std::atan2(right.z(), right.x()), 0.3, -0.15
+    };
+    point.time_from_start = rclcpp::Duration::from_seconds(0.01);
+
+    traj.points.push_back(point);
+    return traj;
+  }
+
+  void swap_support_leg() { left_support_ = !left_support_; }
+
+  rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_sub_;
+  rclcpp::Publisher<trajectory_msgs::msg::JointTrajectory>::SharedPtr traj_pub_;
+  rclcpp::TimerBase::SharedPtr timer_;
+
+  double target_vel_x_ = 0.0;
+  double target_vel_y_ = 0.0;
+  double phase_ = 0.0;
+  bool left_support_ = true;
+  double step_time_ = 0.8;
+};
+
+int main(int argc, char * argv[])
+{
+  rclcpp::init(argc, argv);
+  rclcpp::spin(std::make_shared<WalkingController>());
+  rclcpp::shutdown();
+  return 0;
+}
+```
+
+### Step 3: Manipulation Integration
+
+#### 3.1 Create Dual-Arm Controller
+
+Create `scripts/arm_controller.py`:
+
+```python
+#!/usr/bin/env python3
+import rclpy
+from rclpy.node import Node
+from geometry_msgs.msg import PoseStamped
+from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+import numpy as np
+
+class DualArmController(Node):
+    def __init__(self):
+        super().__init__('dual_arm_controller')
+
+        self.left_sub = self.create_subscription(
+            PoseStamped, '/left_arm_target', self.left_callback, 10)
+        self.right_sub = self.create_subscription(
+            PoseStamped, '/right_arm_target', self.right_callback, 10)
+
+        self.traj_pub = self.create_publisher(
+            JointTrajectory, '/arm_trajectory', 10)
+
+        self.get_logger().info('Dual Arm Controller initialized')
+
+    def left_callback(self, msg):
+        angles = self.arm_ik(msg.pose, 'left')
+        self.publish_trajectory('left', angles)
+
+    def right_callback(self, msg):
+        angles = self.arm_ik(msg.pose, 'right')
+        self.publish_trajectory('right', angles)
+
+    def arm_ik(self, target, arm):
+        """Simple 3-DOF arm IK"""
+        pos = np.array([target.position.x, target.position.y, target.position.z])
+
+        L1, L2 = 0.3, 0.25
+        r = np.linalg.norm(pos)
+
+        elbow = np.arccos((L1**2 + L2**2 - r**2) / (2*L1*L2))
+        alpha = np.arctan2(pos[2], np.sqrt(pos[0]**2 + pos[1]**2))
+        beta = np.arcsin(L2 * np.sin(elbow) / r)
+        shoulder_pitch = alpha - beta
+        shoulder_roll = np.arctan2(pos[1], pos[0])
+
+        return [shoulder_pitch, shoulder_roll, elbow]
+
+    def publish_trajectory(self, arm, angles):
+        traj = JointTrajectory()
+        traj.joint_names = [f'{arm}_shoulder_pitch', f'{arm}_shoulder_roll', f'{arm}_elbow']
+
+        point = JointTrajectoryPoint()
+        point.positions = angles
+        point.time_from_start = rclpy.duration.Duration(seconds=1.0).to_msg()
+
+        traj.points.append(point)
+        self.traj_pub.publish(traj)
+
+def main():
+    rclpy.init()
+    rclpy.spin(DualArmController())
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+### Step 4: Whole-Body Controller
+
+#### 4.1 Create Whole-Body Optimizer
+
+Create `src/whole_body_controller.cpp`:
+
+```cpp
+#include "rclcpp/rclcpp.hpp"
+#include "sensor_msgs/msg/joint_state.hpp"
+#include "trajectory_msgs/msg/joint_trajectory.hpp"
+#include <Eigen/Dense>
+
+class WholeBodyController : public rclcpp::Node
+{
+public:
+  WholeBodyController() : Node("whole_body_controller")
+  {
+    joint_sub_ = this->create_subscription<sensor_msgs::msg::JointState>(
+      "/joint_states", 10,
+      std::bind(&WholeBodyController::joint_callback, this, std::placeholders::_1));
+
+    cmd_pub_ = this->create_publisher<trajectory_msgs::msg::JointTrajectory>(
+      "/whole_body_command", 10);
+
+    timer_ = this->create_wall_timer(
+      std::chrono::milliseconds(10),
+      std::bind(&WholeBodyController::control_loop, this));
+
+    RCLCPP_INFO(this->get_logger(), "Whole-Body Controller initialized");
+  }
+
+private:
+  void joint_callback(const sensor_msgs::msg::JointState::SharedPtr msg)
+  {
+    current_state_ = msg;
+  }
+
+  void control_loop()
+  {
+    if (!current_state_) return;
+
+    // Task priorities: Balance > Manipulation > Secondary
+    auto desired_vel = compute_task_velocities();
+    auto joint_vel = solve_optimization(desired_vel);
+    auto positions = integrate_velocities(joint_vel);
+
+    publish_commands(positions);
+  }
+
+  Eigen::VectorXd compute_task_velocities()
+  {
+    Eigen::VectorXd task_vel(18);
+    task_vel.setZero();
+
+    // Priority 1: CoM stability
+    task_vel.segment(0, 3) << 0.0, 0.0, 0.0;
+
+    // Priority 2: Foot placement
+    task_vel.segment(3, 6).setZero();
+
+    // Priority 3: Hand targets
+    task_vel.segment(9, 6).setZero();
+
+    return task_vel;
+  }
+
+  Eigen::VectorXd solve_optimization(const Eigen::VectorXd& task_vel)
+  {
+    // Hierarchical QP solver
+    int n_joints = 20;
+    Eigen::MatrixXd J = compute_jacobian();
+
+    Eigen::VectorXd joint_vel = J.completeOrthogonalDecomposition().solve(task_vel);
+    return joint_vel;
+  }
+
+  Eigen::MatrixXd compute_jacobian()
+  {
+    Eigen::MatrixXd J(18, 20);
+    J.setIdentity();
+    return J;
+  }
+
+  std::vector<double> integrate_velocities(const Eigen::VectorXd& vel)
+  {
+    std::vector<double> pos;
+    double dt = 0.01;
+
+    for (size_t i = 0; i < current_state_->position.size(); ++i) {
+      pos.push_back(current_state_->position[i] + vel[i] * dt);
+    }
+
+    return pos;
+  }
+
+  void publish_commands(const std::vector<double>& positions)
+  {
+    trajectory_msgs::msg::JointTrajectory traj;
+    traj.joint_names = current_state_->name;
+
+    trajectory_msgs::msg::JointTrajectoryPoint point;
+    point.positions = positions;
+    point.time_from_start = rclcpp::Duration::from_seconds(0.01);
+
+    traj.points.push_back(point);
+    cmd_pub_->publish(traj);
+  }
+
+  rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_sub_;
+  rclcpp::Publisher<trajectory_msgs::msg::JointTrajectory>::SharedPtr cmd_pub_;
+  rclcpp::TimerBase::SharedPtr timer_;
+
+  sensor_msgs::msg::JointState::SharedPtr current_state_;
+};
+
+int main(int argc, char * argv[])
+{
+  rclcpp::init(argc, argv);
+  rclcpp::spin(std::make_shared<WholeBodyController>());
+  rclcpp::shutdown();
+  return 0;
+}
+```
+
+### Step 5: Mission Planner
+
+#### 5.1 Create High-Level Task Coordinator
+
+Create `scripts/mission_planner.py`:
+
+```python
+#!/usr/bin/env python3
+import rclpy
+from rclpy.node import Node
+from std_msgs.msg import String
+from geometry_msgs.msg import PoseStamped
+from enum import Enum
+import json
+
+class TaskState(Enum):
+    IDLE = 0
+    NAVIGATING = 1
+    MANIPULATING = 2
+    SPEAKING = 3
+    COMPLETED = 4
+
+class MissionPlanner(Node):
+    def __init__(self):
+        super().__init__('mission_planner')
+
+        self.mission_sub = self.create_subscription(
+            String, '/mission_command', self.mission_callback, 10)
+
+        self.nav_pub = self.create_publisher(PoseStamped, '/nav_goal', 10)
+        self.arm_pub = self.create_publisher(PoseStamped, '/left_arm_target', 10)
+        self.status_pub = self.create_publisher(String, '/status', 10)
+
+        self.task_queue = []
+        self.state = TaskState.IDLE
+
+        self.create_timer(0.5, self.state_update)
+
+        self.get_logger().info('Mission Planner initialized')
+
+    def mission_callback(self, msg):
+        mission = json.loads(msg.data)
+        self.parse_mission(mission)
+
+    def parse_mission(self, mission):
+        if mission['type'] == 'fetch_object':
+            self.task_queue = [
+                {'type': 'navigate', 'target': mission['object_loc']},
+                {'type': 'grasp', 'object': mission['object']},
+                {'type': 'navigate', 'target': mission['deliver_loc']},
+                {'type': 'release'}
+            ]
+
+    def state_update(self):
+        if self.state == TaskState.IDLE and self.task_queue:
+            task = self.task_queue.pop(0)
+            self.execute_task(task)
+
+    def execute_task(self, task):
+        if task['type'] == 'navigate':
+            self.state = TaskState.NAVIGATING
+            goal = PoseStamped()
+            goal.pose.position.x = task['target']['x']
+            goal.pose.position.y = task['target']['y']
+            self.nav_pub.publish(goal)
+
+        elif task['type'] == 'grasp':
+            self.state = TaskState.MANIPULATING
+            target = PoseStamped()
+            target.pose.position.x = 0.3
+            target.pose.position.y = 0.2
+            target.pose.position.z = 0.5
+            self.arm_pub.publish(target)
+
+        self.create_timer(3.0, lambda: self.complete_task(), oneshot=True)
+
+    def complete_task(self):
+        self.state = TaskState.COMPLETED
+        self.create_timer(0.5, lambda: setattr(self, 'state', TaskState.IDLE), oneshot=True)
+
+def main():
+    rclpy.init()
+    rclpy.spin(MissionPlanner())
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+### Step 6: Testing and Validation
+
+#### 6.1 Create Launch File
+
+Create `launch/complete_humanoid.launch.py`:
+
+```python
+from launch import LaunchDescription
+from launch_ros.actions import Node
+import os
+
+def generate_launch_description():
+    return LaunchDescription([
+        Node(
+            package='complete_humanoid',
+            executable='walking_controller',
+            name='walking_controller',
+            output='screen'
+        ),
+        Node(
+            package='complete_humanoid',
+            executable='arm_controller',
+            name='arm_controller',
+            output='screen'
+        ),
+        Node(
+            package='complete_humanoid',
+            executable='whole_body_controller',
+            name='whole_body_controller',
+            output='screen'
+        ),
+        Node(
+            package='complete_humanoid',
+            executable='mission_planner',
+            name='mission_planner',
+            output='screen'
+        )
+    ])
+```
+
+#### 6.2 Create Integration Test
+
+Create `test/test_system.py`:
+
+```python
+#!/usr/bin/env python3
+import rclpy
+from rclpy.node import Node
+from std_msgs.msg import String
+import json
+import time
+
+class SystemTester(Node):
+    def __init__(self):
+        super().__init__('system_tester')
+
+        self.status_sub = self.create_subscription(
+            String, '/status', self.status_callback, 10)
+
+        self.mission_pub = self.create_publisher(
+            String, '/mission_command', 10)
+
+        self.completed = False
+
+    def status_callback(self, msg):
+        if 'COMPLETED' in msg.data:
+            self.completed = True
+
+    def test_fetch_mission(self):
+        self.get_logger().info('Testing fetch mission...')
+
+        mission = {
+            'type': 'fetch_object',
+            'object': 'cup',
+            'object_loc': {'x': 2.0, 'y': 1.0},
+            'deliver_loc': {'x': 0.0, 'y': 0.0}
+        }
+
+        self.mission_pub.publish(String(data=json.dumps(mission)))
+
+        start = time.time()
+        while time.time() - start < 30.0:
+            rclpy.spin_once(self, timeout_sec=0.5)
+            if self.completed:
+                break
+
+        assert self.completed, "Mission timeout"
+        self.get_logger().info('✓ Fetch mission passed')
+
+def main():
+    rclpy.init()
+    tester = SystemTester()
+    try:
+        tester.test_fetch_mission()
+        tester.get_logger().info('All tests passed!')
+    except AssertionError as e:
+        tester.get_logger().error(f'Test failed: {e}')
+    finally:
+        tester.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+#### 6.3 Build and Run
+
+```bash
+cd ~/ros2_ws
+colcon build --packages-select complete_humanoid
+source install/setup.bash
+
+# Launch system
+ros2 launch complete_humanoid complete_humanoid.launch.py
+
+# Run test
+ros2 run complete_humanoid test_system
+
+# Send mission
+ros2 topic pub /mission_command std_msgs/String \
+  "data: '{\"type\": \"fetch_object\", \"object\": \"cup\",
+  \"object_loc\": {\"x\": 2.0, \"y\": 1.0},
+  \"deliver_loc\": {\"x\": 0.0, \"y\": 0.0}}'"
+```
+
+## Expected Outcomes
+
+After completing this project, you'll have:
+- A fully integrated humanoid robot system
+- Simultaneous locomotion and manipulation capabilities
+- Whole-body control with task prioritization
+- Real-world deployment readiness
+- Comprehensive understanding of humanoid robotics
+
+## Advanced Challenges
+
+For additional learning, try these extensions:
+1. **Dynamic Walking with Manipulation**: Walk while carrying objects
+2. **Multi-Contact Control**: Use hands and feet for climbing
+3. **Adaptive Gait Generation**: Walk on uneven terrain
+4. **Vision-Guided Locomotion**: Navigate using camera feedback
+5. **Learning-Based Control**: Integrate RL for adaptive behaviors
+
+## Deployment Considerations
+
+When deploying to real hardware:
+- Safety limits on joint velocities and torques
+- Emergency stop procedures
+- Battery management and power monitoring
+- Sensor calibration and fault detection
+- Fall detection and recovery strategies
+
+## Resources
+
+- [Whole-Body Control Papers and Tutorials](https://github.com/stack-of-tasks)
+- [Humanoid Robotics Resources](https://humanoid-robotics.org/)
+- [Appendix C: C++ Guide](/docs/appendices/appendix-c-cpp-guide)
+- [Appendix G: Industry Standards](/docs/appendices/appendix-g-industry-standards)
+- [Appendix H: Troubleshooting](/docs/appendices/appendix-h-troubleshooting)
+
+## Congratulations!
+
+By completing this project, you've demonstrated mastery of:
+- Physical AI principles
+- Humanoid robot design and control
+- ROS 2 development
+- Integration of complex robotic systems
+
+You're now ready to contribute to cutting-edge robotics research and development!

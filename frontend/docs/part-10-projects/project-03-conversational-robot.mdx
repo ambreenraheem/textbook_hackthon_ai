@@ -1,0 +1,814 @@
+---
+id: project-03-conversational-robot
+title: Project 3 - Conversational Robot
+description: Integrate large language models for natural language interaction and task planning.
+sidebar_label: Proj 3. Conversational Robot
+sidebar_position: 3
+difficulty: intermediate
+estimatedDuration: 3-5 hours
+prerequisites:
+  - ch15-ai-fundamentals
+  - ch17-llm-robots
+technologies: [ROS 2, Python, OpenAI API, LangChain, Speech Recognition]
+learningOutcomes:
+  - Integrate LLMs with ROS 2
+  - Implement speech recognition and synthesis
+  - Design conversational dialog systems
+  - Generate task plans from natural language
+keywords: [LLM, conversational AI, natural language, task planning, speech]
+---
+
+# Project 3: Conversational Robot
+
+## Overview
+
+Create a robot that understands and responds to natural language commands, plans tasks, and engages in meaningful conversation using large language models.
+
+## Prerequisites
+
+Before starting this project, you should have completed:
+- [Chapter 15: AI & ML Fundamentals](/docs/part-05-ai-ml/ch15-ai-fundamentals) - Machine learning basics
+- [Chapter 17: Large Language Models for Robots](/docs/part-05-ai-ml/ch17-llm-robots) - LLM integration techniques
+
+## Learning Objectives
+
+By completing this project, you will:
+1. Set up LLM API integration (OpenAI or local models)
+2. Implement speech-to-text and text-to-speech
+3. Design dialog management for robot interaction
+4. Generate executable task plans from natural language
+5. Handle context and maintain conversation state
+6. Ensure safe and appropriate robot responses
+
+## Project Steps
+
+### Step 1: LLM Setup and Integration
+
+#### 1.1 Create Package and Install Dependencies
+
+```bash
+cd ~/ros2_ws/src
+ros2 pkg create --build-type ament_python conversational_robot \
+  --dependencies rclpy std_msgs geometry_msgs
+
+cd conversational_robot
+mkdir -p conversational_robot config prompts
+
+# Install Python dependencies
+pip install openai langchain langchain-openai speechrecognition pyttsx3 pyaudio
+```
+
+#### 1.2 Create LLM Interface
+
+Create `conversational_robot/llm_interface.py`:
+
+```python
+#!/usr/bin/env python3
+import rclpy
+from rclpy.node import Node
+from std_msgs.msg import String
+from geometry_msgs.msg import Twist
+from langchain_openai import ChatOpenAI
+from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain.schema import HumanMessage, AIMessage, SystemMessage
+from langchain.memory import ConversationBufferMemory
+import os
+import json
+
+class LLMInterface(Node):
+    def __init__(self):
+        super().__init__('llm_interface')
+
+        # Parameters
+        self.declare_parameter('api_key', '')
+        self.declare_parameter('model', 'gpt-4')
+        self.declare_parameter('temperature', 0.7)
+
+        api_key = self.get_parameter('api_key').value
+        model = self.get_parameter('model').value
+        temperature = self.get_parameter('temperature').value
+
+        # Initialize LLM
+        self.llm = ChatOpenAI(
+            model=model,
+            temperature=temperature,
+            openai_api_key=api_key or os.getenv('OPENAI_API_KEY')
+        )
+
+        # Conversation memory
+        self.memory = ConversationBufferMemory(return_messages=True)
+
+        # Subscribers and Publishers
+        self.user_input_sub = self.create_subscription(
+            String, '/user_input', self.user_input_callback, 10)
+
+        self.response_pub = self.create_publisher(String, '/llm_response', 10)
+        self.action_pub = self.create_publisher(String, '/robot_action', 10)
+        self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
+
+        # System prompt
+        self.system_prompt = self.load_system_prompt()
+
+        self.get_logger().info('LLM Interface initialized')
+
+    def load_system_prompt(self):
+        """Load robot system prompt"""
+        return """You are a helpful humanoid robot assistant. You can:
+1. Answer questions and have conversations
+2. Control robot movement (forward, backward, turn left, turn right, stop)
+3. Perform simple tasks
+
+When the user asks you to move, respond with a JSON action:
+{"action": "move", "direction": "forward/backward/left/right/stop", "duration": seconds}
+
+For conversations, just respond naturally.
+
+Current capabilities:
+- Movement control
+- Object recognition (when camera is available)
+- Task planning
+
+Keep responses concise and friendly."""
+
+    def user_input_callback(self, msg):
+        """Process user input through LLM"""
+        user_text = msg.data
+        self.get_logger().info(f'User: {user_text}')
+
+        # Create prompt with history
+        messages = [
+            SystemMessage(content=self.system_prompt),
+            *self.memory.chat_memory.messages,
+            HumanMessage(content=user_text)
+        ]
+
+        # Get LLM response
+        try:
+            response = self.llm.invoke(messages)
+            response_text = response.content
+
+            # Save to memory
+            self.memory.chat_memory.add_user_message(user_text)
+            self.memory.chat_memory.add_ai_message(response_text)
+
+            # Publish response
+            self.response_pub.publish(String(data=response_text))
+            self.get_logger().info(f'Robot: {response_text}')
+
+            # Check if response contains action
+            self.parse_and_execute_action(response_text)
+
+        except Exception as e:
+            self.get_logger().error(f'LLM error: {e}')
+            error_msg = "I'm sorry, I encountered an error processing your request."
+            self.response_pub.publish(String(data=error_msg))
+
+    def parse_and_execute_action(self, response_text):
+        """Parse JSON actions from response and execute"""
+        try:
+            # Look for JSON in response
+            if '{' in response_text and '}' in response_text:
+                start = response_text.find('{')
+                end = response_text.rfind('}') + 1
+                json_str = response_text[start:end]
+
+                action = json.loads(json_str)
+
+                if action.get('action') == 'move':
+                    self.execute_movement(action)
+                    self.action_pub.publish(String(data=json_str))
+
+        except json.JSONDecodeError:
+            pass  # No valid JSON action found
+
+    def execute_movement(self, action):
+        """Execute robot movement"""
+        direction = action.get('direction', 'stop')
+        duration = action.get('duration', 1.0)
+
+        cmd = Twist()
+
+        if direction == 'forward':
+            cmd.linear.x = 0.3
+        elif direction == 'backward':
+            cmd.linear.x = -0.3
+        elif direction == 'left':
+            cmd.angular.z = 0.5
+        elif direction == 'right':
+            cmd.angular.z = -0.5
+        elif direction == 'stop':
+            cmd.linear.x = 0.0
+            cmd.angular.z = 0.0
+
+        # Publish for duration
+        timer = self.create_timer(0.1, lambda: self.cmd_vel_pub.publish(cmd))
+        self.create_timer(duration, lambda: timer.cancel(), oneshot=True)
+
+def main():
+    rclpy.init()
+    node = LLMInterface()
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+---
+
+### Step 2: Speech Interface Implementation
+
+#### 2.1 Create Speech Recognition Node
+
+Create `conversational_robot/speech_recognition.py`:
+
+```python
+#!/usr/bin/env python3
+import rclpy
+from rclpy.node import Node
+from std_msgs.msg import String
+import speech_recognition as sr
+import threading
+
+class SpeechRecognition(Node):
+    def __init__(self):
+        super().__init__('speech_recognition')
+
+        # Publisher for recognized text
+        self.text_pub = self.create_publisher(String, '/user_input', 10)
+
+        # Speech recognizer
+        self.recognizer = sr.Recognizer()
+        self.microphone = sr.Microphone()
+
+        # Calibrate for ambient noise
+        with self.microphone as source:
+            self.get_logger().info('Calibrating for ambient noise...')
+            self.recognizer.adjust_for_ambient_noise(source, duration=2)
+            self.get_logger().info('Ready for speech input')
+
+        # Start listening thread
+        self.listening = True
+        self.listen_thread = threading.Thread(target=self.listen_loop)
+        self.listen_thread.start()
+
+    def listen_loop(self):
+        """Continuously listen for speech"""
+        while self.listening and rclpy.ok():
+            try:
+                with self.microphone as source:
+                    self.get_logger().info('Listening...')
+                    audio = self.recognizer.listen(source, timeout=5.0)
+
+                try:
+                    # Recognize speech using Google Speech Recognition
+                    text = self.recognizer.recognize_google(audio)
+                    self.get_logger().info(f'Recognized: {text}')
+
+                    # Publish recognized text
+                    self.text_pub.publish(String(data=text))
+
+                except sr.UnknownValueError:
+                    self.get_logger().warn('Could not understand audio')
+                except sr.RequestError as e:
+                    self.get_logger().error(f'Speech recognition error: {e}')
+
+            except sr.WaitTimeoutError:
+                pass  # No speech detected, continue listening
+
+    def destroy_node(self):
+        self.listening = False
+        self.listen_thread.join(timeout=2.0)
+        super().destroy_node()
+
+def main():
+    rclpy.init()
+    node = SpeechRecognition()
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+#### 2.2 Create Text-to-Speech Node
+
+Create `conversational_robot/text_to_speech.py`:
+
+```python
+#!/usr/bin/env python3
+import rclpy
+from rclpy.node import Node
+from std_msgs.msg import String
+import pyttsx3
+import threading
+import queue
+
+class TextToSpeech(Node):
+    def __init__(self):
+        super().__init__('text_to_speech')
+
+        # TTS engine
+        self.engine = pyttsx3.init()
+
+        # Configure voice
+        self.engine.setProperty('rate', 150)  # Speed
+        self.engine.setProperty('volume', 0.9)  # Volume (0-1)
+
+        # Set voice (optional)
+        voices = self.engine.getProperty('voices')
+        # self.engine.setProperty('voice', voices[1].id)  # Female voice
+
+        # Subscribe to LLM responses
+        self.response_sub = self.create_subscription(
+            String, '/llm_response', self.response_callback, 10)
+
+        # Speech queue for thread-safe operation
+        self.speech_queue = queue.Queue()
+        self.speaking = True
+
+        # Start TTS thread
+        self.tts_thread = threading.Thread(target=self.tts_loop)
+        self.tts_thread.start()
+
+        self.get_logger().info('Text-to-Speech initialized')
+
+    def response_callback(self, msg):
+        """Queue response for speech synthesis"""
+        text = msg.data
+
+        # Remove JSON actions from speech
+        if '{' in text and '}' in text:
+            start = text.find('{')
+            end = text.rfind('}') + 1
+            text = text[:start] + text[end:]
+
+        text = text.strip()
+        if text:
+            self.speech_queue.put(text)
+
+    def tts_loop(self):
+        """Process speech queue"""
+        while self.speaking and rclpy.ok():
+            try:
+                text = self.speech_queue.get(timeout=1.0)
+                self.get_logger().info(f'Speaking: {text}')
+                self.engine.say(text)
+                self.engine.runAndWait()
+            except queue.Empty:
+                continue
+
+    def destroy_node(self):
+        self.speaking = False
+        self.tts_thread.join(timeout=2.0)
+        super().destroy_node()
+
+def main():
+    rclpy.init()
+    node = TextToSpeech()
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+---
+
+### Step 3: Dialog Management
+
+#### 3.1 Create Dialog Manager
+
+Create `conversational_robot/dialog_manager.py`:
+
+```python
+#!/usr/bin/env python3
+import rclpy
+from rclpy.node import Node
+from std_msgs.msg import String
+from enum import Enum
+import json
+
+class DialogState(Enum):
+    IDLE = 1
+    LISTENING = 2
+    PROCESSING = 3
+    RESPONDING = 4
+    ACTING = 5
+
+class DialogManager(Node):
+    def __init__(self):
+        super().__init__('dialog_manager')
+
+        # Current state
+        self.state = DialogState.IDLE
+
+        # Context tracking
+        self.current_task = None
+        self.task_history = []
+
+        # Subscribers
+        self.user_input_sub = self.create_subscription(
+            String, '/user_input', self.user_input_callback, 10)
+        self.llm_response_sub = self.create_subscription(
+            String, '/llm_response', self.llm_response_callback, 10)
+        self.action_sub = self.create_subscription(
+            String, '/robot_action', self.action_callback, 10)
+
+        # Publishers
+        self.state_pub = self.create_publisher(String, '/dialog_state', 10)
+        self.context_pub = self.create_publisher(String, '/dialog_context', 10)
+
+        # State machine timer
+        self.create_timer(0.5, self.state_machine_update)
+
+        self.get_logger().info('Dialog Manager initialized')
+
+    def user_input_callback(self, msg):
+        """Handle new user input"""
+        if self.state in [DialogState.IDLE, DialogState.LISTENING]:
+            self.state = DialogState.PROCESSING
+            self.get_logger().info(f'State: {self.state.name}')
+
+    def llm_response_callback(self, msg):
+        """Handle LLM response"""
+        if self.state == DialogState.PROCESSING:
+            self.state = DialogState.RESPONDING
+            self.get_logger().info(f'State: {self.state.name}')
+
+    def action_callback(self, msg):
+        """Handle robot action"""
+        try:
+            action = json.loads(msg.data)
+            self.current_task = action
+            self.state = DialogState.ACTING
+            self.get_logger().info(f'Executing action: {action}')
+        except:
+            pass
+
+    def state_machine_update(self):
+        """Update state machine"""
+        # Publish current state
+        self.state_pub.publish(String(data=self.state.name))
+
+        # Auto-transition from RESPONDING to IDLE
+        if self.state == DialogState.RESPONDING:
+            self.state = DialogState.IDLE
+
+        # Auto-transition from ACTING to IDLE after completion
+        if self.state == DialogState.ACTING:
+            if self.is_action_complete():
+                self.task_history.append(self.current_task)
+                self.current_task = None
+                self.state = DialogState.IDLE
+
+    def is_action_complete(self):
+        """Check if current action is complete"""
+        # Simple timeout-based completion
+        if self.current_task:
+            # Actions complete after their duration
+            return True  # Simplified for demo
+        return True
+
+    def get_context(self):
+        """Get current dialog context"""
+        return {
+            'state': self.state.name,
+            'current_task': self.current_task,
+            'task_history': self.task_history[-5:]  # Last 5 tasks
+        }
+
+def main():
+    rclpy.init()
+    node = DialogManager()
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+---
+
+### Step 4: Task Planning Integration
+
+#### 4.1 Create Task Planner
+
+Create `conversational_robot/task_planner.py`:
+
+```python
+#!/usr/bin/env python3
+import rclpy
+from rclpy.node import Node
+from std_msgs.msg import String
+from geometry_msgs.msg import Twist
+import json
+
+class TaskPlanner(Node):
+    def __init__(self):
+        super().__init__('task_planner')
+
+        # Subscribe to robot actions
+        self.action_sub = self.create_subscription(
+            String, '/robot_action', self.action_callback, 10)
+
+        # Publishers for task execution
+        self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
+        self.task_status_pub = self.create_publisher(String, '/task_status', 10)
+
+        # Task queue
+        self.task_queue = []
+        self.current_task = None
+
+        # Task executor timer
+        self.create_timer(0.1, self.execute_tasks)
+
+        self.get_logger().info('Task Planner initialized')
+
+    def action_callback(self, msg):
+        """Parse and queue actions"""
+        try:
+            action = json.loads(msg.data)
+            self.task_queue.append(action)
+            self.get_logger().info(f'Queued task: {action}')
+        except:
+            self.get_logger().warn(f'Invalid action format: {msg.data}')
+
+    def execute_tasks(self):
+        """Execute queued tasks"""
+        if not self.current_task and self.task_queue:
+            self.current_task = self.task_queue.pop(0)
+            self.execute_task(self.current_task)
+
+    def execute_task(self, task):
+        """Execute a single task"""
+        action_type = task.get('action')
+
+        if action_type == 'move':
+            self.execute_movement(task)
+        elif action_type == 'speak':
+            self.execute_speech(task)
+        elif action_type == 'wait':
+            self.execute_wait(task)
+
+        # Mark task complete
+        self.task_status_pub.publish(String(data=f'Completed: {task}'))
+        self.current_task = None
+
+    def execute_movement(self, task):
+        """Execute movement task"""
+        direction = task.get('direction', 'stop')
+        duration = task.get('duration', 1.0)
+
+        cmd = Twist()
+
+        if direction == 'forward':
+            cmd.linear.x = 0.3
+        elif direction == 'backward':
+            cmd.linear.x = -0.3
+        elif direction == 'left':
+            cmd.angular.z = 0.5
+        elif direction == 'right':
+            cmd.angular.z = -0.5
+
+        # Publish movement
+        end_time = self.get_clock().now() + rclpy.duration.Duration(seconds=duration)
+        while self.get_clock().now() < end_time:
+            self.cmd_vel_pub.publish(cmd)
+            rclpy.spin_once(self, timeout_sec=0.1)
+
+        # Stop
+        self.cmd_vel_pub.publish(Twist())
+
+    def execute_speech(self, task):
+        """Execute speech task"""
+        # Text-to-speech handles this
+        pass
+
+    def execute_wait(self, task):
+        """Execute wait task"""
+        duration = task.get('duration', 1.0)
+        end_time = self.get_clock().now() + rclpy.duration.Duration(seconds=duration)
+        while self.get_clock().now() < end_time:
+            rclpy.spin_once(self, timeout_sec=0.1)
+
+def main():
+    rclpy.init()
+    node = TaskPlanner()
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+---
+
+### Step 5: Testing and Integration
+
+#### 5.1 Create Launch File
+
+Create `launch/conversational_robot.launch.py`:
+
+```python
+from launch import LaunchDescription
+from launch_ros.actions import Node
+import os
+from ament_index_python.packages import get_package_share_directory
+
+def generate_launch_description():
+    return LaunchDescription([
+        Node(
+            package='conversational_robot',
+            executable='llm_interface',
+            name='llm_interface',
+            parameters=[{
+                'api_key': os.getenv('OPENAI_API_KEY', ''),
+                'model': 'gpt-4o-mini',  # Use cheaper model for testing
+                'temperature': 0.7
+            }],
+            output='screen'
+        ),
+        Node(
+            package='conversational_robot',
+            executable='speech_recognition',
+            name='speech_recognition',
+            output='screen'
+        ),
+        Node(
+            package='conversational_robot',
+            executable='text_to_speech',
+            name='text_to_speech',
+            output='screen'
+        ),
+        Node(
+            package='conversational_robot',
+            executable='dialog_manager',
+            name='dialog_manager',
+            output='screen'
+        ),
+        Node(
+            package='conversational_robot',
+            executable='task_planner',
+            name='task_planner',
+            output='screen'
+        )
+    ])
+```
+
+#### 5.2 Update setup.py
+
+Edit `setup.py`:
+
+```python
+from setuptools import setup
+
+package_name = 'conversational_robot'
+
+setup(
+    name=package_name,
+    version='0.0.1',
+    packages=[package_name],
+    data_files=[
+        ('share/ament_index/resource_index/packages',
+            ['resource/' + package_name]),
+        ('share/' + package_name, ['package.xml']),
+        ('share/' + package_name + '/launch', ['launch/conversational_robot.launch.py']),
+    ],
+    install_requires=['setuptools'],
+    zip_safe=True,
+    maintainer='Your Name',
+    maintainer_email='your.email@example.com',
+    description='Conversational Robot with LLM integration',
+    license='Apache License 2.0',
+    tests_require=['pytest'],
+    entry_points={
+        'console_scripts': [
+            'llm_interface = conversational_robot.llm_interface:main',
+            'speech_recognition = conversational_robot.speech_recognition:main',
+            'text_to_speech = conversational_robot.text_to_speech:main',
+            'dialog_manager = conversational_robot.dialog_manager:main',
+            'task_planner = conversational_robot.task_planner:main',
+        ],
+    },
+)
+```
+
+#### 5.3 Build and Run
+
+```bash
+# Set OpenAI API key
+export OPENAI_API_KEY='your-api-key-here'
+
+# Build
+cd ~/ros2_ws
+colcon build --packages-select conversational_robot
+source install/setup.bash
+
+# Launch
+ros2 launch conversational_robot conversational_robot.launch.py
+```
+
+#### 5.4 Test Conversations
+
+```bash
+# Test with text input
+ros2 topic pub /user_input std_msgs/String "data: 'Hello, robot!'"
+
+# Test movement command
+ros2 topic pub /user_input std_msgs/String "data: 'Move forward for 2 seconds'"
+
+# Monitor responses
+ros2 topic echo /llm_response
+
+# Monitor robot actions
+ros2 topic echo /robot_action
+```
+
+#### 5.5 Create Test Script
+
+Create `test/test_conversation.py`:
+
+```python
+#!/usr/bin/env python3
+import rclpy
+from rclpy.node import Node
+from std_msgs.msg import String
+import time
+
+class ConversationTester(Node):
+    def __init__(self):
+        super().__init__('conversation_tester')
+
+        self.response_sub = self.create_subscription(
+            String, '/llm_response', self.response_callback, 10)
+        self.input_pub = self.create_publisher(String, '/user_input', 10)
+
+        self.responses_received = []
+
+    def response_callback(self, msg):
+        self.responses_received.append(msg.data)
+        self.get_logger().info(f'Response: {msg.data}')
+
+    def test_conversation(self):
+        """Test basic conversation"""
+        test_inputs = [
+            "Hello! What's your name?",
+            "Move forward for 1 second",
+            "Turn left",
+            "Stop",
+            "What can you do?"
+        ]
+
+        for user_input in test_inputs:
+            self.get_logger().info(f'Testing: {user_input}')
+            self.input_pub.publish(String(data=user_input))
+            time.sleep(3.0)  # Wait for response
+
+        assert len(self.responses_received) == len(test_inputs), \
+            f"Expected {len(test_inputs)} responses, got {len(self.responses_received)}"
+
+        self.get_logger().info('✓ All conversation tests passed')
+
+def main():
+    rclpy.init()
+    tester = ConversationTester()
+
+    try:
+        tester.test_conversation()
+    except AssertionError as e:
+        tester.get_logger().error(f'Test failed: {e}')
+    finally:
+        tester.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+## Expected Outcomes
+
+After completing this project, you'll have:
+- A robot that understands natural language commands
+- Voice-based human-robot interaction
+- LLM-powered task planning
+- Practical experience with conversational AI
+
+## Next Steps
+
+Once you've completed this project, you can:
+- Add multimodal interaction (vision + language)
+- Implement long-term memory and personalization
+- Integrate with vision-language-action models (Chapter 18)
+- Proceed to **Project 4: Vision-Based Manipulation**
+
+## Resources
+
+- [OpenAI API Documentation](https://platform.openai.com/docs)
+- [LangChain Documentation](https://python.langchain.com/)
+- [Appendix B: Python Guide](/docs/appendices/appendix-b-python-guide)

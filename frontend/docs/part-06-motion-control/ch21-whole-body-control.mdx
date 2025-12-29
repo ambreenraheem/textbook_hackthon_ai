@@ -1,0 +1,394 @@
+---
+id: ch21-whole-body-control
+title: Chapter 21 - Whole-Body Control
+description: Coordinate locomotion and manipulation simultaneously for humanoid robots.
+sidebar_label: Ch 21. Whole-Body Control
+sidebar_position: 3
+keywords: [whole-body control, locomotion and manipulation, task prioritization]
+difficulty: advanced
+estimatedReadingTime: 40
+---
+
+# Chapter 21: Whole-Body Control
+
+## Learning Objectives
+
+By the end of this chapter, you will be able to:
+- Understand whole-body control architectures
+- Coordinate locomotion and manipulation
+- Implement task prioritization and constraint handling
+- Handle redundancy and singularities
+
+## Introduction
+
+Whole-body control coordinates all degrees of freedom of a humanoid robot simultaneously—legs for locomotion, arms for manipulation, torso for balance. Unlike controlling subsystems independently, whole-body control treats the robot as a unified system, enabling complex tasks like walking while carrying objects or opening a door while maintaining balance.
+
+## The Challenge
+
+**Humanoid DOF**: 30-40 joints total
+- Legs: 12 DOF (6 per leg) for locomotion
+- Arms: 14 DOF (7 per arm) for manipulation
+- Torso/Head: 4-8 DOF for balance and perception
+
+**Challenge**: Coordinate all joints to achieve multiple objectives simultaneously while respecting:
+- Physical constraints (joint limits, torque limits)
+- Kinematic constraints (closed chains, contact points)
+- Dynamic constraints (balance, ZMP stability)
+
+## Whole-Body Control Architecture
+
+```
+High-Level Tasks → Task Prioritization → Optimization → Joint Commands
+```
+
+**1. Task Specification**: Define goals (e.g., "right hand at position P, maintain balance")
+**2. Task Prioritization**: Rank tasks by importance
+**3. Optimization**: Solve for joint velocities/torques satisfying constraints
+**4. Execution**: Send commands to low-level controllers
+
+## Task Prioritization
+
+### Hierarchical Task Control
+
+Some tasks are more critical than others:
+
+**Priority 1 (Highest)**: Balance and collision avoidance
+**Priority 2**: Primary manipulation task
+**Priority 3**: Secondary objectives (posture, energy efficiency)
+
+**Nullspace Projection**: Execute lower-priority tasks in the nullspace of higher-priority tasks
+
+### Example: Reaching While Balancing
+
+```python
+def whole_body_reach(robot, target_hand_pose, maintain_balance=True):
+    """Reach target while maintaining balance."""
+
+    # Task 1 (Priority 1): Maintain CoM within support polygon
+    com_task_jacobian = robot.compute_com_jacobian()
+    com_current = robot.get_center_of_mass()
+    com_target = robot.get_support_polygon_center()
+    com_error = com_target - com_current
+
+    # Task 2 (Priority 2): Move hand to target
+    hand_jacobian = robot.compute_hand_jacobian()
+    hand_current = robot.get_hand_pose()
+    hand_error = target_hand_pose - hand_current
+
+    # Solve hierarchically
+    # First, satisfy balance task
+    J1 = com_task_jacobian
+    dq1 = np.linalg.pinv(J1) @ com_error
+
+    # Second, satisfy hand task in nullspace of balance task
+    N1 = np.eye(robot.n_dof) - np.linalg.pinv(J1) @ J1  # Nullspace projector
+    J2_bar = hand_jacobian @ N1
+    dq2 = np.linalg.pinv(J2_bar) @ (hand_error - hand_jacobian @ dq1)
+
+    # Combined joint velocities
+    dq = dq1 + dq2
+
+    return dq
+```
+
+## Quadratic Programming Formulation
+
+### Optimization Problem
+
+Minimize:
+```
+||J * dq - dx_desired||²  (task error)
++ w_regularization * ||dq||²  (prefer small motions)
+```
+
+Subject to:
+```
+dq_min ≤ dq ≤ dq_max  (joint velocity limits)
+tau_min ≤ M(q)*ddq + C(q,dq) + G(q) ≤ tau_max  (torque limits)
+Contact constraints (feet on ground)
+```
+
+### Implementation with CVXPY
+
+```python
+import cvxpy as cp
+
+def whole_body_qp_controller(robot, tasks, weights, constraints):
+    """Solve whole-body control as QP."""
+    n_dof = robot.n_dof
+    dq = cp.Variable(n_dof)  # Joint velocities
+
+    # Objective: weighted sum of task errors
+    objective = 0
+    for task, weight in zip(tasks, weights):
+        J = task.jacobian
+        dx_des = task.desired_velocity
+        task_error = cp.sum_squares(J @ dq - dx_des)
+        objective += weight * task_error
+
+    # Regularization
+    objective += 0.01 * cp.sum_squares(dq)
+
+    # Constraints
+    cvx_constraints = [
+        dq >= robot.dq_min,
+        dq <= robot.dq_max
+    ]
+
+    # Solve QP
+    problem = cp.Problem(cp.Minimize(objective), cvx_constraints)
+    problem.solve()
+
+    return dq.value
+```
+
+## ZMP-Based Whole-Body Control
+
+### Zero Moment Point (ZMP)
+
+For stable walking, ZMP must remain inside support polygon.
+
+**ZMP Constraint**:
+```
+x_zmp = (sum_i m_i * (z_com - z_ground) * ddx_com_i) / (sum_i m_i * ddz_com_i + m_total * g)
+```
+
+**Simplified**: ZMP ≈ horizontal projection of CoM if CoM acceleration is small
+
+### Incorporating ZMP in Control
+
+```python
+def zmp_whole_body_controller(robot, hand_target, zmp_margin=0.02):
+    """Whole-body control maintaining ZMP stability."""
+    # Compute support polygon
+    foot_contacts = robot.get_foot_contact_points()
+    support_polygon = compute_convex_hull(foot_contacts)
+
+    # Current ZMP
+    zmp_current = robot.compute_zmp()
+
+    # Ensure ZMP stays within safe region (shrink polygon by margin)
+    safe_region = shrink_polygon(support_polygon, margin=zmp_margin)
+
+    # ZMP task: adjust CoM to keep ZMP in safe region
+    if not point_in_polygon(zmp_current, safe_region):
+        # Compute CoM adjustment
+        zmp_error = project_point_to_polygon(zmp_current, safe_region) - zmp_current
+        com_velocity_needed = zmp_error * K_zmp
+
+        # Add ZMP task with highest priority
+        zmp_task = Task(
+            jacobian=robot.compute_com_jacobian(),
+            desired_velocity=com_velocity_needed,
+            priority=0  # Highest
+        )
+    else:
+        zmp_task = None
+
+    # Hand reaching task
+    hand_task = Task(
+        jacobian=robot.compute_hand_jacobian(),
+        desired_velocity=compute_hand_velocity(robot, hand_target),
+        priority=1
+    )
+
+    # Solve with prioritized tasks
+    tasks = [zmp_task, hand_task] if zmp_task else [hand_task]
+    dq = solve_prioritized_tasks(robot, tasks)
+
+    return dq
+```
+
+## Model Predictive Control (MPC)
+
+### Predictive Horizon
+
+Look ahead N timesteps, optimize trajectory:
+
+```python
+def mpc_whole_body(robot, tasks, horizon=10, dt=0.1):
+    """MPC for whole-body control."""
+    n_dof = robot.n_dof
+    N = horizon
+
+    # Decision variables: joint positions over horizon
+    q_traj = cp.Variable((N, n_dof))
+    dq_traj = cp.Variable((N, n_dof))
+
+    # Objective: minimize task errors + control effort
+    objective = 0
+    for t in range(N):
+        # Task errors at time t
+        for task in tasks:
+            J_t = task.jacobian_func(q_traj[t])
+            x_t = task.forward_kinematics(q_traj[t])
+            x_desired_t = task.desired_trajectory(t * dt)
+            objective += cp.sum_squares(x_t - x_desired_t)
+
+        # Control effort
+        objective += 0.1 * cp.sum_squares(dq_traj[t])
+
+    # Constraints
+    constraints = []
+    for t in range(N-1):
+        # Dynamics: q[t+1] = q[t] + dq[t] * dt
+        constraints.append(q_traj[t+1] == q_traj[t] + dq_traj[t] * dt)
+
+    # Joint limits
+    for t in range(N):
+        constraints.append(q_traj[t] >= robot.q_min)
+        constraints.append(q_traj[t] <= robot.q_max)
+
+    # Initial condition
+    constraints.append(q_traj[0] == robot.get_current_joints())
+
+    # Solve MPC problem
+    problem = cp.Problem(cp.Minimize(objective), constraints)
+    problem.solve()
+
+    # Return first control action
+    return dq_traj[0].value
+```
+
+## Locomotion + Manipulation
+
+### Coordinated Tasks
+
+**Example**: Opening a door while walking
+
+**Phase 1**: Approach door
+- Locomotion: Walk toward door
+- Arms: Pre-shape for grasping handle
+
+**Phase 2**: Grasp handle
+- Locomotion: Stop, maintain balance
+- Right arm: Reach and grasp handle
+- Left arm: Free for balance
+
+**Phase 3**: Open door
+- Locomotion: Step backward or sideways
+- Right arm: Pull handle while maintaining grasp
+- Whole-body: Coordinate arm pull with body motion
+
+```python
+def open_door_while_walking(robot, door_pose):
+    """Coordinate locomotion and manipulation to open door."""
+    # Phase 1: Approach
+    robot.walk_to(door_pose, stop_distance=0.5)
+
+    # Phase 2: Grasp handle
+    handle_pose = door_pose + [0.9, 0, 1.0]  # Handle location
+    while not robot.is_grasping():
+        dq = whole_body_reach(robot, handle_pose, maintain_balance=True)
+        robot.set_joint_velocities(dq)
+
+    # Phase 3: Pull door open
+    door_open_angle = 90  # degrees
+    current_angle = 0
+
+    while current_angle < door_open_angle:
+        # Compute door trajectory
+        handle_trajectory = compute_arc_trajectory(handle_pose, door_open_angle, current_angle)
+
+        # Coordinate: arm follows trajectory, body adjusts for balance
+        arm_task = Task(robot.right_hand, target=handle_trajectory)
+        balance_task = Task(robot.com, target=robot.stable_com_position())
+
+        dq = solve_prioritized_tasks(robot, [balance_task, arm_task])
+        robot.set_joint_velocities(dq)
+
+        current_angle += 1  # Increment
+
+    print("Door opened successfully")
+```
+
+## Handling Redundancy
+
+### Exploiting Nullspace
+
+Humanoids are redundant for most tasks. Use extra DOF for secondary objectives:
+
+**Primary Task**: Hand position
+**Secondary Tasks** (in nullspace):
+- Joint centering (avoid joint limits)
+- Singularity avoidance
+- Energy minimization
+
+```python
+def nullspace_optimization(robot, primary_task, secondary_objectives):
+    """Use nullspace for secondary objectives."""
+    J_primary = primary_task.jacobian
+    dx_primary = primary_task.desired_velocity
+
+    # Solve primary task
+    dq_primary = np.linalg.pinv(J_primary) @ dx_primary
+
+    # Nullspace projector
+    N = np.eye(robot.n_dof) - np.linalg.pinv(J_primary) @ J_primary
+
+    # Secondary objective: minimize ||dq - dq_nominal||^2 in nullspace
+    dq_nominal = robot.compute_nominal_posture_velocity()
+    dq_secondary = N @ dq_nominal
+
+    # Combined
+    dq = dq_primary + dq_secondary
+
+    return dq
+```
+
+## Real-Time Optimization
+
+### Fast QP Solvers
+
+For real-time control (>100 Hz), use specialized solvers:
+
+**OSQP**: Operator Splitting QP (open-source, fast)
+**qpOASES**: Online Active Set QP
+**ProxQP**: Proximal QP solver
+
+**Example with OSQP**:
+```python
+import osqp
+import scipy.sparse as sp
+
+def real_time_qp(robot, tasks):
+    """Real-time QP solve using OSQP."""
+    n = robot.n_dof
+
+    # Formulate QP: min 0.5 x'Px + q'x  s.t. l <= Ax <= u
+    P, q, A, l, u = construct_qp_matrices(robot, tasks)
+
+    # Convert to sparse
+    P = sp.csc_matrix(P)
+    A = sp.csc_matrix(A)
+
+    # Setup solver (once, reuse across iterations)
+    solver = osqp.OSQP()
+    solver.setup(P, q, A, l, u, verbose=False, polish=True)
+
+    # Solve (fast, <1ms for typical humanoid)
+    result = solver.solve()
+
+    return result.x  # Joint velocities
+```
+
+## Key Takeaways
+
+- Whole-body control coordinates all DOF simultaneously for complex tasks
+- Task prioritization ensures critical objectives (balance) are met before secondary goals
+- Nullspace projection allows secondary objectives without compromising primary tasks
+- QP formulation handles constraints (limits, torques, contacts) elegantly
+- ZMP constraints ensure walking stability during manipulation
+- MPC optimizes over a predictive horizon for anticipatory control
+- Real-time solvers (OSQP, qpOASES) enable 100+ Hz control rates
+
+## What's Next?
+
+Part VII explores **Human-Robot Interaction**, covering natural interfaces, social cues, and teleoperation—essential for humanoids working alongside people.
+
+### Further Resources
+
+- **Papers**: "Stack of Tasks" by Siciliano, "Hierarchical QP Control" by De Lasa et al
+- **Software**: Pinocchio (efficient dynamics), OSQP, qpOASES
+- **Books**: "Springer Handbook of Robotics" Chapter 9 (Humanoid Robots)
+- **Courses**: MIT 6.8 32 (Underactuated Robotics) by Russ Tedrake

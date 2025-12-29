@@ -1,0 +1,1106 @@
+---
+id: ch12-computer-vision
+title: Chapter 12 - Computer Vision for Robotics
+description: Master image processing, object detection, segmentation, and 3D vision techniques.
+sidebar_label: Ch 12. Computer Vision
+sidebar_position: 1
+keywords: [computer vision, object detection, segmentation, depth estimation]
+difficulty: intermediate
+estimatedReadingTime: 35
+---
+
+# Chapter 12: Computer Vision for Robotics
+
+## Learning Objectives
+
+By the end of this chapter, you will be able to:
+- Process images and video streams in real-time
+- Implement object detection and tracking algorithms
+- Perform semantic and instance segmentation
+- Estimate depth and reconstruct 3D structure from images
+- Integrate computer vision into ROS 2 humanoid systems
+
+## Introduction
+
+Computer vision is the sensory foundation of modern robotics, enabling machines to perceive, understand, and interact with the physical world. For humanoid robots, vision is especially critical—it's how they recognize people, navigate environments, manipulate objects, and understand context.
+
+This chapter covers the essential computer vision techniques you'll need to build perception systems for humanoid robots, from classical image processing to modern deep learning approaches. We'll focus on practical implementation using OpenCV, PyTorch, and ROS 2 integration.
+
+### Why Computer Vision for Humanoids?
+
+**Key Applications:**
+- **Human detection and recognition**: Identifying and tracking people for interaction
+- **Object manipulation**: Detecting and localizing objects for grasping
+- **Navigation**: Understanding the environment for obstacle avoidance
+- **Pose estimation**: Recognizing human poses and gestures
+- **Scene understanding**: Semantic interpretation of surroundings
+- **Visual servoing**: Using visual feedback for precise control
+
+**Computer Vision vs. Other Sensors:**
+
+| Sensor Type | Range | Cost | Information Richness | Lighting Dependency |
+|-------------|-------|------|---------------------|---------------------|
+| RGB Camera | 0.5-10m | $ | High (color, texture) | High |
+| Depth Camera | 0.5-5m | $$ | Medium (3D structure) | Medium |
+| LiDAR | 1-100m | $$$ | Medium (distance only) | None |
+| Ultrasonic | 0.1-5m | $ | Low (distance only) | None |
+
+Vision provides the richest information but requires more computational processing and is affected by lighting conditions.
+
+## Image Processing Fundamentals
+
+### Setting Up OpenCV with ROS 2
+
+```bash
+# Install OpenCV and cv_bridge
+sudo apt install ros-humble-cv-bridge ros-humble-vision-opencv
+pip3 install opencv-python opencv-contrib-python
+```
+
+**Basic Image Processing Node:**
+
+```python
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import Image
+from cv_bridge import CvBridge
+import cv2
+import numpy as np
+
+class ImageProcessorNode(Node):
+    def __init__(self):
+        super().__init__('image_processor')
+
+        self.bridge = CvBridge()
+
+        # Subscriber to camera topic
+        self.subscription = self.create_subscription(
+            Image,
+            '/camera/image_raw',
+            self.image_callback,
+            10
+        )
+
+        # Publisher for processed images
+        self.publisher = self.create_publisher(
+            Image,
+            '/camera/image_processed',
+            10
+        )
+
+        self.get_logger().info('Image processor node started')
+
+    def image_callback(self, msg):
+        try:
+            # Convert ROS Image to OpenCV format
+            cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+
+            # Process image
+            processed_image = self.process_image(cv_image)
+
+            # Convert back to ROS Image
+            ros_image = self.bridge.cv2_to_imgmsg(processed_image, encoding='bgr8')
+            ros_image.header = msg.header  # Preserve timestamp
+
+            # Publish
+            self.publisher.publish(ros_image)
+
+        except Exception as e:
+            self.get_logger().error(f'Error processing image: {str(e)}')
+
+    def process_image(self, image):
+        # Placeholder for image processing
+        return image
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = ImageProcessorNode()
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+### Image Filtering and Enhancement
+
+**Noise Reduction:**
+
+```python
+def denoise_image(image):
+    """Apply denoising filters"""
+
+    # Gaussian blur - fast, general purpose
+    gaussian = cv2.GaussianBlur(image, (5, 5), 0)
+
+    # Bilateral filter - edge-preserving
+    bilateral = cv2.bilateralFilter(image, 9, 75, 75)
+
+    # Non-local means denoising - slow but effective
+    denoised = cv2.fastNlMeansDenoisingColored(image, None, 10, 10, 7, 21)
+
+    return denoised
+```
+
+**Edge Detection:**
+
+```python
+def detect_edges(image):
+    """Multi-scale edge detection"""
+
+    # Convert to grayscale
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    # Apply Gaussian blur to reduce noise
+    blurred = cv2.GaussianBlur(gray, (5, 5), 1.4)
+
+    # Canny edge detection
+    edges = cv2.Canny(blurred, threshold1=50, threshold2=150)
+
+    # Sobel gradients (alternative)
+    sobel_x = cv2.Sobel(blurred, cv2.CV_64F, 1, 0, ksize=3)
+    sobel_y = cv2.Sobel(blurred, cv2.CV_64F, 0, 1, ksize=3)
+    sobel_magnitude = np.sqrt(sobel_x**2 + sobel_y**2)
+
+    return edges, sobel_magnitude
+```
+
+**Color Space Transformations:**
+
+```python
+def convert_color_spaces(image):
+    """Convert between color spaces for different tasks"""
+
+    # RGB to HSV (good for color-based segmentation)
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+
+    # RGB to LAB (perceptually uniform)
+    lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+
+    # RGB to Grayscale
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    return hsv, lab, gray
+
+def segment_by_color(image, lower_hsv, upper_hsv):
+    """Segment objects by color range in HSV space"""
+
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+
+    # Create mask for color range
+    mask = cv2.inRange(hsv, lower_hsv, upper_hsv)
+
+    # Apply morphological operations to clean up
+    kernel = np.ones((5, 5), np.uint8)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+
+    # Apply mask to original image
+    result = cv2.bitwise_and(image, image, mask=mask)
+
+    return result, mask
+
+# Example: Detect red objects
+lower_red = np.array([0, 120, 70])
+upper_red = np.array([10, 255, 255])
+red_objects, mask = segment_by_color(image, lower_red, upper_red)
+```
+
+### Feature Detection and Matching
+
+**Classical Features (SIFT, ORB):**
+
+```python
+def detect_and_match_features(img1, img2, feature_type='ORB'):
+    """Detect and match features between two images"""
+
+    if feature_type == 'SIFT':
+        detector = cv2.SIFT_create()
+    elif feature_type == 'ORB':
+        detector = cv2.ORB_create(nfeatures=2000)
+    else:
+        raise ValueError(f"Unknown feature type: {feature_type}")
+
+    # Detect keypoints and compute descriptors
+    kp1, des1 = detector.detectAndCompute(img1, None)
+    kp2, des2 = detector.detectAndCompute(img2, None)
+
+    # Match features
+    if feature_type == 'SIFT':
+        matcher = cv2.BFMatcher(cv2.NORM_L2, crossCheck=False)
+        matches = matcher.knnMatch(des1, des2, k=2)
+
+        # Apply Lowe's ratio test
+        good_matches = []
+        for m, n in matches:
+            if m.distance < 0.75 * n.distance:
+                good_matches.append(m)
+    else:
+        matcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+        good_matches = matcher.match(des1, des2)
+        good_matches = sorted(good_matches, key=lambda x: x.distance)
+
+    return kp1, kp2, good_matches
+
+def draw_matches(img1, kp1, img2, kp2, matches):
+    """Visualize feature matches"""
+
+    img_matches = cv2.drawMatches(
+        img1, kp1, img2, kp2, matches[:50],  # Top 50 matches
+        None,
+        flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS
+    )
+
+    return img_matches
+```
+
+## Object Detection with Deep Learning
+
+### Using Pre-trained Models
+
+**YOLOv8 Integration:**
+
+```bash
+# Install Ultralytics YOLO
+pip3 install ultralytics
+```
+
+```python
+from ultralytics import YOLO
+import cv2
+import numpy as np
+
+class ObjectDetectorNode(Node):
+    def __init__(self):
+        super().__init__('object_detector')
+
+        # Load pre-trained YOLOv8 model
+        self.model = YOLO('yolov8n.pt')  # nano model for speed
+        # Options: yolov8n, yolov8s, yolov8m, yolov8l, yolov8x
+
+        self.bridge = CvBridge()
+
+        # Subscriptions and publishers
+        self.image_sub = self.create_subscription(
+            Image, '/camera/image_raw', self.detect_objects, 10
+        )
+
+        self.detection_pub = self.create_publisher(
+            DetectionArray, '/detections', 10
+        )
+
+        self.image_pub = self.create_publisher(
+            Image, '/camera/detections_image', 10
+        )
+
+        # Parameters
+        self.conf_threshold = 0.5  # Confidence threshold
+        self.iou_threshold = 0.4   # NMS IoU threshold
+
+        self.get_logger().info('Object detector initialized')
+
+    def detect_objects(self, msg):
+        # Convert to OpenCV
+        cv_image = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
+
+        # Run inference
+        results = self.model(
+            cv_image,
+            conf=self.conf_threshold,
+            iou=self.iou_threshold,
+            verbose=False
+        )
+
+        # Process results
+        detections = []
+        annotated_image = cv_image.copy()
+
+        for result in results:
+            boxes = result.boxes
+
+            for box in boxes:
+                # Extract detection info
+                x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+                conf = float(box.conf[0])
+                cls = int(box.cls[0])
+                label = self.model.names[cls]
+
+                # Store detection
+                detection = {
+                    'bbox': [x1, y1, x2, y2],
+                    'confidence': conf,
+                    'class': label,
+                    'class_id': cls
+                }
+                detections.append(detection)
+
+                # Draw on image
+                cv2.rectangle(
+                    annotated_image,
+                    (int(x1), int(y1)),
+                    (int(x2), int(y2)),
+                    (0, 255, 0), 2
+                )
+                cv2.putText(
+                    annotated_image,
+                    f'{label} {conf:.2f}',
+                    (int(x1), int(y1) - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5, (0, 255, 0), 2
+                )
+
+        # Publish results
+        self.publish_detections(detections, msg.header)
+
+        # Publish annotated image
+        detection_image = self.bridge.cv2_to_imgmsg(annotated_image, 'bgr8')
+        detection_image.header = msg.header
+        self.image_pub.publish(detection_image)
+
+        self.get_logger().info(f'Detected {len(detections)} objects')
+
+    def publish_detections(self, detections, header):
+        # Convert to ROS message format
+        # (implementation depends on your message definition)
+        pass
+```
+
+**Fine-tuning for Custom Objects:**
+
+```python
+from ultralytics import YOLO
+
+def train_custom_detector():
+    """Train YOLOv8 on custom dataset"""
+
+    # Load pre-trained model
+    model = YOLO('yolov8n.pt')
+
+    # Train on custom dataset
+    # Dataset should be in YOLO format with data.yaml
+    results = model.train(
+        data='custom_dataset/data.yaml',
+        epochs=100,
+        imgsz=640,
+        batch=16,
+        name='humanoid_objects',
+        device=0,  # GPU ID
+
+        # Training hyperparameters
+        lr0=0.01,
+        lrf=0.01,
+        momentum=0.937,
+        weight_decay=0.0005,
+        warmup_epochs=3,
+
+        # Augmentation
+        hsv_h=0.015,
+        hsv_s=0.7,
+        hsv_v=0.4,
+        degrees=0.0,
+        translate=0.1,
+        scale=0.5,
+        shear=0.0,
+        perspective=0.0,
+        flipud=0.0,
+        fliplr=0.5,
+        mosaic=1.0,
+        mixup=0.0
+    )
+
+    # Evaluate
+    metrics = model.val()
+
+    print(f"mAP50: {metrics.box.map50:.3f}")
+    print(f"mAP50-95: {metrics.box.map:.3f}")
+
+    # Export for deployment
+    model.export(format='onnx')  # or 'tensorrt', 'openvino'
+
+# Dataset structure:
+# custom_dataset/
+#   ├── data.yaml
+#   ├── train/
+#   │   ├── images/
+#   │   └── labels/
+#   └── val/
+#       ├── images/
+#       └── labels/
+```
+
+### Real-Time Detection Optimization
+
+**TensorRT Acceleration:**
+
+```python
+from ultralytics import YOLO
+
+def optimize_for_inference():
+    """Optimize model for real-time inference"""
+
+    # Load model
+    model = YOLO('yolov8n.pt')
+
+    # Export to TensorRT (NVIDIA GPUs)
+    model.export(
+        format='engine',  # TensorRT
+        half=True,        # FP16 precision
+        device=0,
+        workspace=4,      # GB
+        batch=1
+    )
+
+    # Load optimized model
+    optimized_model = YOLO('yolov8n.engine')
+
+    return optimized_model
+
+# Benchmark
+import time
+
+def benchmark_model(model, image, iterations=100):
+    """Measure inference speed"""
+
+    # Warmup
+    for _ in range(10):
+        _ = model(image, verbose=False)
+
+    # Benchmark
+    start = time.time()
+    for _ in range(iterations):
+        results = model(image, verbose=False)
+    end = time.time()
+
+    fps = iterations / (end - start)
+    latency = (end - start) / iterations * 1000  # ms
+
+    print(f"FPS: {fps:.1f}")
+    print(f"Latency: {latency:.1f} ms")
+
+    return fps, latency
+```
+
+## Object Tracking
+
+### Single Object Tracking
+
+```python
+class ObjectTracker:
+    """Track single object across frames"""
+
+    def __init__(self, tracker_type='CSRT'):
+        """
+        Tracker types:
+        - CSRT: Accurate but slower
+        - KCF: Fast but less accurate
+        - MOSSE: Very fast but basic
+        """
+
+        if tracker_type == 'CSRT':
+            self.tracker = cv2.TrackerCSRT_create()
+        elif tracker_type == 'KCF':
+            self.tracker = cv2.TrackerKCF_create()
+        elif tracker_type == 'MOSSE':
+            self.tracker = cv2.legacy.TrackerMOSSE_create()
+        else:
+            raise ValueError(f"Unknown tracker: {tracker_type}")
+
+        self.initialized = False
+
+    def init(self, frame, bbox):
+        """Initialize tracker with first frame and bounding box"""
+        self.tracker.init(frame, bbox)
+        self.initialized = True
+
+    def update(self, frame):
+        """Update tracker with new frame"""
+        if not self.initialized:
+            return False, None
+
+        success, bbox = self.tracker.update(frame)
+        return success, bbox
+
+# Usage
+tracker = ObjectTracker('CSRT')
+
+# First frame: manually select or detect object
+bbox = (x, y, w, h)  # From detection
+tracker.init(first_frame, bbox)
+
+# Subsequent frames
+while True:
+    ret, frame = cap.read()
+    success, bbox = tracker.update(frame)
+
+    if success:
+        x, y, w, h = [int(v) for v in bbox]
+        cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
+```
+
+### Multi-Object Tracking (MOT)
+
+**DeepSORT Implementation:**
+
+```bash
+pip3 install deep-sort-realtime
+```
+
+```python
+from deep_sort_realtime.deepsort_tracker import DeepSort
+
+class MultiObjectTracker(Node):
+    def __init__(self):
+        super().__init__('multi_object_tracker')
+
+        # Initialize DeepSORT
+        self.tracker = DeepSort(
+            max_age=30,              # Frames to keep track without detection
+            n_init=3,                # Confirmations needed
+            max_iou_distance=0.7,    # IoU threshold
+            max_cosine_distance=0.2, # Appearance threshold
+            nn_budget=100
+        )
+
+        self.bridge = CvBridge()
+
+        # Subscriptions
+        self.image_sub = self.create_subscription(
+            Image, '/camera/image_raw', self.track_objects, 10
+        )
+
+        self.detection_sub = self.create_subscription(
+            DetectionArray, '/detections', self.update_detections, 10
+        )
+
+        self.latest_detections = []
+
+    def update_detections(self, msg):
+        """Receive new detections"""
+        self.latest_detections = msg.detections
+
+    def track_objects(self, msg):
+        """Track objects across frames"""
+
+        cv_image = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
+
+        # Convert detections to DeepSORT format
+        # Format: ([x1, y1, x2, y2], confidence, class_name)
+        detections = []
+        for det in self.latest_detections:
+            bbox = det.bbox  # [x1, y1, x2, y2]
+            conf = det.confidence
+            class_name = det.class_name
+
+            detections.append((bbox, conf, class_name))
+
+        # Update tracker
+        tracks = self.tracker.update_tracks(detections, frame=cv_image)
+
+        # Process tracks
+        annotated_image = cv_image.copy()
+
+        for track in tracks:
+            if not track.is_confirmed():
+                continue
+
+            track_id = track.track_id
+            bbox = track.to_ltrb()  # [x1, y1, x2, y2]
+
+            # Draw track
+            x1, y1, x2, y2 = [int(v) for v in bbox]
+            cv2.rectangle(annotated_image, (x1, y1), (x2, y2), (255, 0, 0), 2)
+            cv2.putText(
+                annotated_image,
+                f'ID: {track_id}',
+                (x1, y1 - 10),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5, (255, 0, 0), 2
+            )
+
+        self.get_logger().info(f'Tracking {len(tracks)} objects')
+```
+
+## Semantic Segmentation
+
+**Using Segmentation Models:**
+
+```bash
+pip3 install segmentation-models-pytorch albumentations
+```
+
+```python
+import segmentation_models_pytorch as smp
+import torch
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
+
+class SemanticSegmentationNode(Node):
+    def __init__(self):
+        super().__init__('semantic_segmentation')
+
+        # Load pre-trained model
+        self.model = smp.Unet(
+            encoder_name="resnet34",
+            encoder_weights="imagenet",
+            in_channels=3,
+            classes=21,  # PASCAL VOC classes
+        )
+
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.model.to(self.device)
+        self.model.eval()
+
+        # Preprocessing
+        self.transform = A.Compose([
+            A.Resize(512, 512),
+            A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+            ToTensorV2()
+        ])
+
+        self.bridge = CvBridge()
+
+        # ROS interface
+        self.image_sub = self.create_subscription(
+            Image, '/camera/image_raw', self.segment_image, 10
+        )
+
+        self.segmentation_pub = self.create_publisher(
+            Image, '/camera/segmentation', 10
+        )
+
+        # Color map for visualization
+        self.colormap = self.create_pascal_label_colormap()
+
+    def segment_image(self, msg):
+        # Convert to OpenCV
+        cv_image = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
+        original_size = cv_image.shape[:2]
+
+        # Preprocess
+        rgb_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2RGB)
+        transformed = self.transform(image=rgb_image)
+        input_tensor = transformed['image'].unsqueeze(0).to(self.device)
+
+        # Inference
+        with torch.no_grad():
+            output = self.model(input_tensor)
+            prediction = torch.argmax(output, dim=1).squeeze().cpu().numpy()
+
+        # Resize to original size
+        prediction = cv2.resize(
+            prediction.astype(np.uint8),
+            (original_size[1], original_size[0]),
+            interpolation=cv2.INTER_NEAREST
+        )
+
+        # Colorize segmentation
+        colored_seg = self.colormap[prediction]
+
+        # Overlay on original image
+        overlay = cv2.addWeighted(cv_image, 0.6, colored_seg, 0.4, 0)
+
+        # Publish
+        seg_msg = self.bridge.cv2_to_imgmsg(overlay, 'bgr8')
+        seg_msg.header = msg.header
+        self.segmentation_pub.publish(seg_msg)
+
+    def create_pascal_label_colormap(self):
+        """Create colormap for PASCAL VOC classes"""
+        colormap = np.zeros((256, 3), dtype=np.uint8)
+
+        # Define colors for 21 classes
+        colors = [
+            [0, 0, 0],       # background
+            [128, 0, 0],     # aeroplane
+            [0, 128, 0],     # bicycle
+            [128, 128, 0],   # bird
+            [0, 0, 128],     # boat
+            [128, 0, 128],   # bottle
+            [0, 128, 128],   # bus
+            [128, 128, 128], # car
+            [64, 0, 0],      # cat
+            [192, 0, 0],     # chair
+            [64, 128, 0],    # cow
+            [192, 128, 0],   # dining table
+            [64, 0, 128],    # dog
+            [192, 0, 128],   # horse
+            [64, 128, 128],  # motorbike
+            [192, 128, 128], # person
+            [0, 64, 0],      # potted plant
+            [128, 64, 0],    # sheep
+            [0, 192, 0],     # sofa
+            [128, 192, 0],   # train
+            [0, 64, 128],    # tv/monitor
+        ]
+
+        colormap[:21] = colors
+        return colormap
+```
+
+## Depth Estimation
+
+### Stereo Vision
+
+**Stereo Camera Calibration:**
+
+```python
+def calibrate_stereo_camera(left_images, right_images, chessboard_size, square_size):
+    """Calibrate stereo camera pair"""
+
+    # Prepare object points
+    objp = np.zeros((chessboard_size[0] * chessboard_size[1], 3), np.float32)
+    objp[:, :2] = np.mgrid[0:chessboard_size[0], 0:chessboard_size[1]].T.reshape(-1, 2)
+    objp *= square_size
+
+    objpoints = []  # 3D points in real world
+    imgpoints_left = []   # 2D points in left image
+    imgpoints_right = []  # 2D points in right image
+
+    for left_img, right_img in zip(left_images, right_images):
+        gray_left = cv2.cvtColor(left_img, cv2.COLOR_BGR2GRAY)
+        gray_right = cv2.cvtColor(right_img, cv2.COLOR_BGR2GRAY)
+
+        # Find chessboard corners
+        ret_left, corners_left = cv2.findChessboardCorners(gray_left, chessboard_size)
+        ret_right, corners_right = cv2.findChessboardCorners(gray_right, chessboard_size)
+
+        if ret_left and ret_right:
+            objpoints.append(objp)
+            imgpoints_left.append(corners_left)
+            imgpoints_right.append(corners_right)
+
+    # Calibrate left camera
+    ret_left, K_left, dist_left, _, _ = cv2.calibrateCamera(
+        objpoints, imgpoints_left, gray_left.shape[::-1], None, None
+    )
+
+    # Calibrate right camera
+    ret_right, K_right, dist_right, _, _ = cv2.calibrateCamera(
+        objpoints, imgpoints_right, gray_right.shape[::-1], None, None
+    )
+
+    # Stereo calibration
+    ret, K_left, dist_left, K_right, dist_right, R, T, E, F = cv2.stereoCalibrate(
+        objpoints, imgpoints_left, imgpoints_right,
+        K_left, dist_left, K_right, dist_right,
+        gray_left.shape[::-1],
+        criteria=(cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 1e-6),
+        flags=cv2.CALIB_FIX_INTRINSIC
+    )
+
+    return K_left, dist_left, K_right, dist_right, R, T
+
+def compute_stereo_disparity(left_image, right_image, calibration_params):
+    """Compute disparity map from stereo pair"""
+
+    K_left, dist_left, K_right, dist_right, R, T = calibration_params
+
+    # Rectify images
+    R1, R2, P1, P2, Q, _, _ = cv2.stereoRectify(
+        K_left, dist_left, K_right, dist_right,
+        left_image.shape[:2][::-1], R, T,
+        alpha=0
+    )
+
+    map1_left, map2_left = cv2.initUndistortRectifyMap(
+        K_left, dist_left, R1, P1, left_image.shape[:2][::-1], cv2.CV_32FC1
+    )
+    map1_right, map2_right = cv2.initUndistortRectifyMap(
+        K_right, dist_right, R2, P2, right_image.shape[:2][::-1], cv2.CV_32FC1
+    )
+
+    left_rectified = cv2.remap(left_image, map1_left, map2_left, cv2.INTER_LINEAR)
+    right_rectified = cv2.remap(right_image, map1_right, map2_right, cv2.INTER_LINEAR)
+
+    # Compute disparity
+    stereo = cv2.StereoBM_create(numDisparities=16*10, blockSize=15)
+    # Or use StereoSGBM for better quality:
+    # stereo = cv2.StereoSGBM_create(
+    #     minDisparity=0,
+    #     numDisparities=16*10,
+    #     blockSize=5,
+    #     P1=8 * 3 * 5**2,
+    #     P2=32 * 3 * 5**2,
+    #     disp12MaxDiff=1,
+    #     uniquenessRatio=10,
+    #     speckleWindowSize=100,
+    #     speckleRange=32
+    # )
+
+    gray_left = cv2.cvtColor(left_rectified, cv2.COLOR_BGR2GRAY)
+    gray_right = cv2.cvtColor(right_rectified, cv2.COLOR_BGR2GRAY)
+
+    disparity = stereo.compute(gray_left, gray_right).astype(np.float32) / 16.0
+
+    # Convert disparity to depth
+    # depth = (focal_length * baseline) / disparity
+    baseline = np.linalg.norm(T)  # Distance between cameras
+    focal_length = P1[0, 0]
+
+    depth = (focal_length * baseline) / (disparity + 1e-6)
+    depth[disparity <= 0] = 0  # Invalid depths
+
+    return disparity, depth, left_rectified, right_rectified
+```
+
+### Monocular Depth Estimation
+
+**Using MiDaS (Deep Learning):**
+
+```bash
+pip3 install timm
+```
+
+```python
+import torch
+import cv2
+import numpy as np
+
+class MonocularDepthEstimator(Node):
+    def __init__(self):
+        super().__init__('depth_estimator')
+
+        # Load MiDaS model
+        self.model_type = "DPT_Large"  # or "DPT_Hybrid", "MiDaS_small"
+        self.midas = torch.hub.load("intel-isl/MiDaS", self.model_type)
+
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.midas.to(self.device)
+        self.midas.eval()
+
+        # Load transforms
+        midas_transforms = torch.hub.load("intel-isl/MiDaS", "transforms")
+        if self.model_type in ["DPT_Large", "DPT_Hybrid"]:
+            self.transform = midas_transforms.dpt_transform
+        else:
+            self.transform = midas_transforms.small_transform
+
+        self.bridge = CvBridge()
+
+        # ROS interface
+        self.image_sub = self.create_subscription(
+            Image, '/camera/image_raw', self.estimate_depth, 10
+        )
+
+        self.depth_pub = self.create_publisher(
+            Image, '/camera/depth', 10
+        )
+
+    def estimate_depth(self, msg):
+        # Convert to OpenCV
+        cv_image = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
+        rgb_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2RGB)
+
+        # Prepare input
+        input_batch = self.transform(rgb_image).to(self.device)
+
+        # Inference
+        with torch.no_grad():
+            prediction = self.midas(input_batch)
+
+            # Resize to original resolution
+            prediction = torch.nn.functional.interpolate(
+                prediction.unsqueeze(1),
+                size=rgb_image.shape[:2],
+                mode="bicubic",
+                align_corners=False,
+            ).squeeze()
+
+        depth_map = prediction.cpu().numpy()
+
+        # Normalize for visualization
+        depth_normalized = cv2.normalize(
+            depth_map, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U
+        )
+        depth_colored = cv2.applyColorMap(depth_normalized, cv2.COLORMAP_MAGMA)
+
+        # Publish
+        depth_msg = self.bridge.cv2_to_imgmsg(depth_colored, 'bgr8')
+        depth_msg.header = msg.header
+        self.depth_pub.publish(depth_msg)
+```
+
+## 3D Vision and Point Clouds
+
+**Converting Depth to Point Cloud:**
+
+```python
+def depth_to_pointcloud(depth_image, camera_intrinsics):
+    """Convert depth image to 3D point cloud"""
+
+    fx, fy = camera_intrinsics['fx'], camera_intrinsics['fy']
+    cx, cy = camera_intrinsics['cx'], camera_intrinsics['cy']
+
+    height, width = depth_image.shape
+
+    # Create meshgrid of pixel coordinates
+    u, v = np.meshgrid(np.arange(width), np.arange(height))
+
+    # Convert to 3D coordinates
+    z = depth_image
+    x = (u - cx) * z / fx
+    y = (v - cy) * z / fy
+
+    # Stack into point cloud (N x 3)
+    points = np.stack([x, y, z], axis=-1)
+    points = points.reshape(-1, 3)
+
+    # Filter invalid points
+    valid_mask = (z.flatten() > 0) & (z.flatten() < 10.0)  # Valid depth range
+    points = points[valid_mask]
+
+    return points
+
+def publish_pointcloud(points, colors, header, publisher):
+    """Publish point cloud to ROS 2"""
+    from sensor_msgs.msg import PointCloud2, PointField
+    from sensor_msgs_py import point_cloud2
+
+    # Create structured array
+    if colors is not None:
+        dtype = np.dtype([
+            ('x', np.float32),
+            ('y', np.float32),
+            ('z', np.float32),
+            ('rgb', np.uint32)
+        ])
+
+        # Combine points and colors
+        cloud_data = np.zeros(len(points), dtype=dtype)
+        cloud_data['x'] = points[:, 0]
+        cloud_data['y'] = points[:, 1]
+        cloud_data['z'] = points[:, 2]
+
+        # Pack RGB into uint32
+        r = (colors[:, 0] * 255).astype(np.uint32)
+        g = (colors[:, 1] * 255).astype(np.uint32)
+        b = (colors[:, 2] * 255).astype(np.uint32)
+        cloud_data['rgb'] = (r << 16) | (g << 8) | b
+    else:
+        dtype = np.dtype([
+            ('x', np.float32),
+            ('y', np.float32),
+            ('z', np.float32)
+        ])
+
+        cloud_data = np.zeros(len(points), dtype=dtype)
+        cloud_data['x'] = points[:, 0]
+        cloud_data['y'] = points[:, 1]
+        cloud_data['z'] = points[:, 2]
+
+    # Create PointCloud2 message
+    msg = point_cloud2.create_cloud(header, fields, cloud_data)
+    publisher.publish(msg)
+```
+
+## Practice Exercises
+
+### Exercise 1: Real-Time Object Detection Pipeline
+
+**Task:** Build a complete object detection system
+
+**Requirements:**
+- Subscribe to camera topic in ROS 2
+- Detect objects using YOLOv8
+- Publish detections with bounding boxes and classes
+- Visualize results in RViz2
+- Achieve >15 FPS on robot platform
+
+### Exercise 2: Multi-Object Tracking
+
+**Task:** Track multiple people in crowded scenes
+
+**Requirements:**
+- Integrate detection with DeepSORT tracking
+- Maintain track IDs across occlusions
+- Handle track creation and deletion
+- Publish track trajectories
+- Visualize tracks with unique colors
+
+### Exercise 3: Semantic Segmentation for Navigation
+
+**Task:** Segment drivable surfaces for navigation
+
+**Requirements:**
+- Train segmentation model on custom dataset
+- Identify floors, obstacles, stairs
+- Publish costmap for navigation stack
+- Real-time performance (>10 FPS)
+- Integrate with ROS 2 navigation
+
+## Best Practices
+
+### 1. Performance Optimization
+
+```python
+# Use GPU acceleration
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+# Batch processing when possible
+results = model(image_batch)
+
+# Use mixed precision (FP16)
+with torch.cuda.amp.autocast():
+    output = model(input)
+
+# Optimize models for inference
+model = torch.jit.script(model)  # TorchScript
+model = torch.quantization.quantize_dynamic(model)  # Quantization
+```
+
+### 2. Robust Detection
+
+- Use confidence thresholds appropriate for your application
+- Apply Non-Maximum Suppression (NMS) to remove duplicate detections
+- Implement temporal filtering to reduce false positives
+- Handle edge cases (occlusion, lighting changes, motion blur)
+
+### 3. ROS 2 Integration
+
+```python
+# Synchronize multiple camera streams
+from message_filters import ApproximateTimeSynchronizer, Subscriber
+
+rgb_sub = Subscriber(self, Image, '/camera/rgb')
+depth_sub = Subscriber(self, Image, '/camera/depth')
+
+ts = ApproximateTimeSynchronizer([rgb_sub, depth_sub], 10, 0.1)
+ts.registerCallback(self.synchronized_callback)
+```
+
+## Common Pitfalls
+
+1. **Not handling camera calibration**: Always calibrate cameras for accurate 3D reconstruction
+2. **Ignoring computational constraints**: Profile code and optimize for real-time performance
+3. **Poor lighting handling**: Test vision systems under various lighting conditions
+4. **Not using GPU**: Computer vision is computationally intensive—use GPU acceleration
+5. **Forgetting coordinate transformations**: Be careful with camera frames and robot base frames
+
+## Further Reading
+
+**Books:**
+- "Computer Vision: Algorithms and Applications" by Richard Szeliski
+- "Multiple View Geometry in Computer Vision" by Hartley & Zisserman
+
+**Online Resources:**
+- [OpenCV Tutorials](https://docs.opencv.org/4.x/d9/df8/tutorial_root.html)
+- [PyTorch Vision Documentation](https://pytorch.org/vision/stable/index.html)
+- [Ultralytics YOLOv8](https://docs.ultralytics.com/)
+
+**Papers:**
+- "You Only Look Once: Unified, Real-Time Object Detection" (Redmon et al., 2016)
+- "Deep Learning for Generic Object Detection: A Survey" (Liu et al., 2020)
+
+## Next Steps
+
+Now that you understand computer vision fundamentals:
+
+1. **Chapter 13**: Integrate multiple sensors (cameras, LiDAR, IMU)
+2. **Chapter 14**: Implement human-specific detection and pose estimation
+3. **Chapter 15**: Apply vision to AI-driven decision making
+4. **Project 4**: Build vision-based manipulation system
+
+:::tip Key Takeaway
+Computer vision is the foundation of perception for humanoid robots. Master the basics (detection, tracking, segmentation) before moving to advanced topics. Always prioritize real-time performance and robustness in real-world conditions.
+:::
