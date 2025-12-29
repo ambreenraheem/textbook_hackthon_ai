@@ -1,8 +1,10 @@
 /**
  * Custom CSS for Physical AI & Humanoid Robotics Textbook
+ * Enhanced typography, responsive design, and improved readability
  */
 
 :root {
+  /* Brand Colors */
   --ifm-color-primary: #2e8555;
   --ifm-color-primary-dark: #29784c;
   --ifm-color-primary-darker: #277148;
@@ -10,8 +12,23 @@
   --ifm-color-primary-light: #33925d;
   --ifm-color-primary-lighter: #359962;
   --ifm-color-primary-lightest: #3cad6e;
-  --ifm-code-font-size: 95%;
+
+  /* Typography */
+  --ifm-font-family-base: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --ifm-font-family-monospace: 'Fira Code', 'Consolas', 'Monaco', 'Courier New', monospace;
+  --ifm-code-font-size: 0.9em;
+  --ifm-line-height-base: 1.7;
+
+  /* Spacing */
+  --ifm-spacing-horizontal: 1.5rem;
+  --ifm-spacing-vertical: 1.5rem;
+
+  /* Code blocks */
   --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+
+  /* Responsive breakpoints */
+  --ifm-container-width: 1280px;
+  --ifm-container-width-xl: 1440px;
 }
 
 [data-theme='dark'] {
@@ -23,34 +40,256 @@
   --ifm-color-primary-lighter: #32d8b4;
   --ifm-color-primary-lightest: #4fddbf;
   --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+  --ifm-background-color: #1a1a1a;
+  --ifm-background-surface-color: #242424;
 }
 
-/* Code blocks */
+/* ==================== Typography ==================== */
+article h1 {
+  font-size: 2.5rem;
+  font-weight: 700;
+  line-height: 1.2;
+  margin-bottom: 1.5rem;
+}
+
+article h2 {
+  font-size: 2rem;
+  font-weight: 600;
+  margin-top: 2.5rem;
+  margin-bottom: 1rem;
+  border-bottom: 2px solid var(--ifm-color-primary-lighter);
+  padding-bottom: 0.5rem;
+}
+
+article h3 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-top: 2rem;
+  margin-bottom: 0.75rem;
+}
+
+article p {
+  margin-bottom: 1.25rem;
+  line-height: 1.8;
+}
+
+/* ==================== Code Blocks ==================== */
 .prism-code {
+  font-size: 0.875rem;
+  line-height: 1.6;
+  border-radius: 8px;
+  padding: 1rem !important;
+}
+
+code {
+  font-family: var(--ifm-font-family-monospace);
+  background-color: rgba(46, 133, 85, 0.1);
+  padding: 0.2em 0.4em;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+.theme-code-block {
+  margin-bottom: 1.5rem;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+/* Code block with title */
+.code-block-title {
+  background-color: var(--ifm-color-primary-dark);
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 8px 8px 0 0;
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.875rem;
+}
+
+/* ==================== Tables ==================== */
+table {
+  width: 100%;
+  margin: 1.5rem 0;
+  border-collapse: collapse;
   font-size: 0.9rem;
 }
 
-/* Highlighted text selection (for Q&A feature) */
+table th {
+  background-color: var(--ifm-color-primary-light);
+  color: white;
+  padding: 0.75rem 1rem;
+  font-weight: 600;
+  text-align: left;
+}
+
+table td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+table tr:hover {
+  background-color: rgba(46, 133, 85, 0.05);
+}
+
+/* ==================== Highlighted text selection (for Q&A feature) ==================== */
 .textbook-selection {
   background-color: rgba(46, 133, 85, 0.2);
   cursor: pointer;
+  transition: background-color 0.2s ease;
 }
 
-/* Math equations */
+.textbook-selection:hover {
+  background-color: rgba(46, 133, 85, 0.3);
+}
+
+/* ==================== Math equations ==================== */
 .katex {
   font-size: 1.1em;
 }
 
-/* Exercises section */
+.katex-display {
+  margin: 1.5rem 0;
+}
+
+/* ==================== Callout Boxes ==================== */
+.admonition {
+  margin: 1.5rem 0;
+  padding: 1rem 1.25rem;
+  border-radius: 8px;
+  border-left: 4px solid;
+}
+
+.admonition-note {
+  border-left-color: #4299e1;
+  background-color: rgba(66, 153, 225, 0.1);
+}
+
+.admonition-tip {
+  border-left-color: #48bb78;
+  background-color: rgba(72, 187, 120, 0.1);
+}
+
+.admonition-warning {
+  border-left-color: #ed8936;
+  background-color: rgba(237, 137, 54, 0.1);
+}
+
+.admonition-danger {
+  border-left-color: #f56565;
+  background-color: rgba(245, 101, 101, 0.1);
+}
+
+/* ==================== Exercises section ==================== */
 .exercise-box {
   border: 2px solid var(--ifm-color-primary);
   border-radius: 8px;
-  padding: 1rem;
-  margin: 1.5rem 0;
+  padding: 1.5rem;
+  margin: 2rem 0;
   background-color: rgba(46, 133, 85, 0.05);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
 }
 
 .exercise-box h3 {
   margin-top: 0;
   color: var(--ifm-color-primary);
+  font-size: 1.25rem;
+}
+
+.exercise-box::before {
+  content: "💻 Hands-On Exercise";
+  display: block;
+  font-weight: 600;
+  color: var(--ifm-color-primary-dark);
+  margin-bottom: 0.5rem;
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ==================== Responsive Design ==================== */
+@media (max-width: 996px) {
+  article h1 {
+    font-size: 2rem;
+  }
+
+  article h2 {
+    font-size: 1.5rem;
+  }
+
+  article h3 {
+    font-size: 1.25rem;
+  }
+
+  .prism-code {
+    font-size: 0.8rem;
+  }
+
+  table {
+    font-size: 0.85rem;
+  }
+}
+
+@media (max-width: 768px) {
+  article h1 {
+    font-size: 1.75rem;
+  }
+
+  article h2 {
+    font-size: 1.35rem;
+  }
+
+  .prism-code {
+    font-size: 0.75rem;
+  }
+
+  /* Make tables scrollable on mobile */
+  .table-wrapper {
+    overflow-x: auto;
+  }
+}
+
+/* ==================== Smooth Scrolling ==================== */
+html {
+  scroll-behavior: smooth;
+}
+
+/* ==================== Sidebar ==================== */
+.theme-doc-sidebar-container {
+  border-right: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.menu__link {
+  font-size: 0.9rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.menu__link--active {
+  font-weight: 600;
+  background-color: rgba(46, 133, 85, 0.1);
+  border-left: 3px solid var(--ifm-color-primary);
+}
+
+/* ==================== TOC (Table of Contents) ==================== */
+.table-of-contents {
+  font-size: 0.875rem;
+}
+
+.table-of-contents__link--active {
+  font-weight: 600;
+  color: var(--ifm-color-primary);
+}
+
+/* ==================== Pagination ==================== */
+.pagination-nav {
+  margin-top: 3rem;
+}
+
+.pagination-nav__link {
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  padding: 1rem;
+  transition: all 0.2s ease;
+}
+
+.pagination-nav__link:hover {
+  border-color: var(--ifm-color-primary);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }

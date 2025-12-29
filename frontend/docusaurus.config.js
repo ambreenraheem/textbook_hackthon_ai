@@ -8,24 +8,20 @@ const darkCodeTheme = themes.dracula;
 /** @type {import('@docusaurus/types').Config} */
 const config = {
   title: 'Physical AI & Humanoid Robotics',
-  tagline: 'Interactive Textbook for Learning Robotics Fundamentals',
+  tagline: 'A Comprehensive Open-Source Textbook on Physical AI, Humanoid Robotics, and ROS 2',
+  favicon: 'img/favicon.ico',
 
   // Set the production url of your site here
-  url: 'https://yourusername.github.io',
+  url: 'https://ambreenraheem.github.io',
   // Set the /<baseUrl>/ pathname under which your site is served
-  baseUrl: '/',
+  baseUrl: '/textbook_hackthon_ai/',
 
   // GitHub pages deployment config
-  organizationName: 'yourusername',
+  organizationName: 'ambreenraheem',
   projectName: 'textbook_hackthon_ai',
 
-  onBrokenLinks: 'throw',
-
-  markdown: {
-    hooks: {
-      onBrokenMarkdownLinks: 'warn',
-    },
-  },
+  onBrokenLinks: 'warn',
+  onBrokenMarkdownLinks: 'warn',
 
   i18n: {
     defaultLocale: 'en',
@@ -39,8 +35,10 @@ const config = {
       ({
         docs: {
           sidebarPath: require.resolve('./sidebars.js'),
-          routeBasePath: '/',
-          editUrl: 'https://github.com/yourusername/textbook_hackthon_ai/tree/main/frontend/',
+          routeBasePath: 'docs',
+          editUrl: 'https://github.com/ambreenraheem/textbook_hackthon_ai/tree/main/frontend/',
+          showLastUpdateTime: true,
+          showLastUpdateAuthor: true,
         },
         blog: false,
         theme: {
@@ -50,11 +48,38 @@ const config = {
     ],
   ],
 
+  plugins: [
+    [
+      require.resolve("@cmfcmf/docusaurus-search-local"),
+      {
+        indexDocs: true,
+        indexBlog: false,
+        indexPages: false,
+        language: "en",
+        style: undefined,
+        maxSearchResults: 8,
+        lunr: {
+          tokenizerSeparator: /[\s\-]+/,
+          b: 0.75,
+          k1: 1.2,
+          titleBoost: 5,
+          contentBoost: 1,
+          tagsBoost: 3,
+          parentCategoriesBoost: 2,
+        },
+      },
+    ],
+  ],
+
   themeConfig:
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
       navbar: {
         title: 'Physical AI & Robotics',
+        logo: {
+          alt: 'Physical AI Logo',
+          src: 'img/logo.svg',
+        },
         items: [
           {
             type: 'docSidebar',
@@ -63,7 +88,33 @@ const config = {
             label: 'Textbook',
           },
           {
-            href: 'https://github.com/yourusername/textbook_hackthon_ai',
+            type: 'dropdown',
+            label: 'Parts',
+            position: 'left',
+            items: [
+              {label: 'Part I: Foundations', to: '/docs/part-01-foundations/ch01-intro-physical-ai'},
+              {label: 'Part II: ROS 2', to: '/docs/part-02-ros2/ch05-intro-ros2'},
+              {label: 'Part III: Simulation', to: '/docs/part-03-simulation/ch09-gazebo'},
+              {label: 'Part IV: Perception', to: '/docs/part-04-perception/ch12-computer-vision'},
+              {label: 'Part V: AI & ML', to: '/docs/part-05-ai-ml/ch15-ai-fundamentals'},
+              {label: 'Part VI: Motion & Control', to: '/docs/part-06-motion-control/ch19-locomotion'},
+              {label: 'Part VII: HRI', to: '/docs/part-07-hri/ch22-hri-fundamentals'},
+              {label: 'Part VIII: Deployment', to: '/docs/part-08-deployment/ch25-industrial'},
+              {label: 'Part IX: Advanced', to: '/docs/part-09-advanced/ch29-embodied-ai'},
+              {label: 'Part X: Projects', to: '/docs/part-10-projects/project-01-ros2-robot'},
+            ],
+          },
+          {
+            type: 'search',
+            position: 'right',
+          },
+          {
+            type: 'html',
+            position: 'right',
+            value: '<button class="navbar__item navbar__link" style="background:none;border:none;cursor:pointer;">🌙</button>',
+          },
+          {
+            href: 'https://github.com/ambreenraheem/textbook_hackthon_ai',
             label: 'GitHub',
             position: 'right',
           },
@@ -73,36 +124,80 @@ const config = {
         style: 'dark',
         links: [
           {
-            title: 'Learn',
+            title: 'Textbook',
             items: [
               {
                 label: 'Introduction',
-                to: '/',
+                to: '/docs/intro',
+              },
+              {
+                label: 'Foundations',
+                to: '/docs/part-01-foundations/ch01-intro-physical-ai',
+              },
+              {
+                label: 'Projects',
+                to: '/docs/part-10-projects/project-01-ros2-robot',
+              },
+              {
+                label: 'Appendices',
+                to: '/docs/appendices/appendix-a-ros2-commands',
               },
             ],
           },
           {
-            title: 'More',
+            title: 'Community',
             items: [
               {
                 label: 'GitHub',
-                href: 'https://github.com/yourusername/textbook_hackthon_ai',
+                href: 'https://github.com/ambreenraheem/textbook_hackthon_ai',
+              },
+              {
+                label: 'Issues',
+                href: 'https://github.com/ambreenraheem/textbook_hackthon_ai/issues',
+              },
+              {
+                label: 'Discussions',
+                href: 'https://github.com/ambreenraheem/textbook_hackthon_ai/discussions',
+              },
+            ],
+          },
+          {
+            title: 'Resources',
+            items: [
+              {
+                label: 'ROS 2 Docs',
+                href: 'https://docs.ros.org/en/humble/',
+              },
+              {
+                label: 'OpenAI',
+                href: 'https://openai.com/',
+              },
+              {
+                label: 'Panaversity',
+                href: 'https://www.panaversity.com',
               },
             ],
           },
         ],
-        copyright: `Copyright © ${new Date().getFullYear()} Physical AI & Humanoid Robotics Textbook. Built with Docusaurus.`,
+        copyright: `Copyright © ${new Date().getFullYear()} Physical AI & Humanoid Robotics Textbook. Licensed under CC BY-NC-SA 4.0. Built with Docusaurus.`,
       },
       prism: {
         theme: lightCodeTheme,
         darkTheme: darkCodeTheme,
-        additionalLanguages: ['python', 'bash'],
+        additionalLanguages: ['python', 'bash', 'cpp', 'c', 'yaml', 'json'],
       },
-      algolia: {
-        appId: 'YOUR_APP_ID',
-        apiKey: 'YOUR_SEARCH_API_KEY',
-        indexName: 'YOUR_INDEX_NAME',
-        contextualSearch: true,
+      colorMode: {
+        defaultMode: 'light',
+        disableSwitch: false,
+        respectPrefersColorScheme: true,
+      },
+      announcementBar: {
+        id: 'support_us',
+        content:
+          '⭐️ If you find this textbook useful, please give it a star on <a target="_blank" rel="noopener noreferrer" href="https://github.com/ambreenraheem/textbook_hackthon_ai">GitHub</a>!',
+        backgroundColor: '#fafbfc',
+        textColor: '#091E42',
+        isCloseable: true,
       },
     }),
 };
