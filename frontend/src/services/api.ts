@@ -18,7 +18,13 @@ export interface StreamCallbacks {
 export const getApiUrl = (): string => {
   // Check if we're in browser environment
   if (typeof window !== 'undefined') {
-    // Try to get from window object (can be set in docusaurus.config.js)
+    // Try to get from Docusaurus customFields
+    const docusaurusConfig = (window as any).docusaurus;
+    if (docusaurusConfig?.siteConfig?.customFields?.chatbotApiUrl) {
+      return docusaurusConfig.siteConfig.customFields.chatbotApiUrl;
+    }
+
+    // Fallback: Try to get from window object
     const customUrl = (window as any).CHATBOT_API_URL;
     if (customUrl) return customUrl;
   }

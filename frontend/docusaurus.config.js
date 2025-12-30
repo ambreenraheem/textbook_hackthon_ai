@@ -30,6 +30,12 @@ const config = {
     locales: ['en'],
   },
 
+  // Custom fields for chatbot configuration
+  customFields: {
+    // Backend API URL - UPDATE THIS after deploying backend to Vercel
+    chatbotApiUrl: process.env.CHATBOT_API_URL || 'http://localhost:8000',
+  },
+
   presets: [
     [
       'classic',
