@@ -171,7 +171,11 @@ async def health_check():
 
     return JSONResponse(
         status_code=status_code,
-        content=response_data
+        content=response_data,
+        headers={
+            "Cache-Control": "public, max-age=60",  # Cache for 60 seconds
+            "Vary": "Accept-Encoding"
+        }
     )
 
 
@@ -188,8 +192,15 @@ async def ping():
     Returns:
         dict: Pong response with timestamp
     """
-    return {
-        "status": "ok",
-        "message": "pong",
-        "timestamp": time.time()
-    }
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={
+            "status": "ok",
+            "message": "pong",
+            "timestamp": time.time()
+        },
+        headers={
+            "Cache-Control": "public, max-age=30",  # Cache for 30 seconds
+            "Vary": "Accept-Encoding"
+        }
+    )

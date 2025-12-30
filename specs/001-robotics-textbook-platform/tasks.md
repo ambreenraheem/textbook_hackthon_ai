@@ -223,37 +223,37 @@ Web application structure (frontend/ and backend/ directories):
 
 - [ ] T068 [P] [deployment-expert] Create GitHub Actions workflow for frontend deployment in .github/workflows/frontend-deploy.yml (build Docusaurus, deploy to GitHub Pages)
 - [ ] T069 [P] [deployment-expert] Create GitHub Actions workflow for backend deployment in .github/workflows/backend-deploy.yml (build Docker image, deploy to Render)
-- [ ] T070 [deployment-expert] Create Dockerfile for backend in backend/Dockerfile (Python 3.10, install deps, run Uvicorn)
+- [x] T070 [deployment-expert] Create Dockerfile for backend in backend/Dockerfile (Python 3.10, install deps, run Uvicorn)
 - [ ] T071 [deployment-expert] Configure Render service (connect GitHub repo, set environment variables, auto-deploy on main branch push)
 - [ ] T072 [deployment-expert] Configure GitHub Pages (Settings → Pages, deploy from gh-pages branch)
 
 ### Health & Monitoring
 
-- [ ] T073 [P] [backend-engineer] Create /api/health endpoint in backend/src/api/health.py (check Postgres, Qdrant, OpenAI connectivity)
-- [ ] T074 [P] [backend-engineer] Add request logging middleware to FastAPI app (log all requests with latency, status code, correlation ID)
+- [x] T073 [P] [backend-engineer] Create /api/health endpoint in backend/src/api/health.py (check Postgres, Qdrant, OpenAI connectivity)
+- [x] T074 [P] [backend-engineer] Add request logging middleware to FastAPI app (log all requests with latency, status code, correlation ID)
 - [ ] T075 [deployment-expert] Set up Render health checks (ping /api/health every 5 minutes, alert on failure)
 
 ### Documentation
 
-- [ ] T076 [P] [content-writer] Create project README.md at root with project overview, setup instructions, deployment status badges
-- [ ] T077 [P] [backend-engineer] Create backend/README.md with API documentation, development setup, testing instructions
-- [ ] T078 [P] [docusaurus-developer] Create frontend/README.md with Docusaurus setup, content authoring guide, deployment instructions
+- [x] T076 [P] [content-writer] Create project README.md at root with project overview, setup instructions, deployment status badges
+- [x] T077 [P] [backend-engineer] Create backend/README.md with API documentation, development setup, testing instructions
+- [x] T078 [P] [docusaurus-developer] Create frontend/README.md with Docusaurus setup, content authoring guide, deployment instructions
 
 ### Content Completion
 
-- [ ] T079 [P] [content-writer] Write remaining chapters 4-10 (Control, Perception, Planning, Learning, Manipulation, Locomotion, HRI) in frontend/docs/chapters/ (~1500 words each)
+- [x] T079 [P] [content-writer] Write remaining chapters 4-10 (Control, Perception, Planning, Learning, Manipulation, Locomotion, HRI) in frontend/docs/chapters/ (~1500 words each)
 - [ ] T080 [content-writer] Re-run ingestion pipeline for all 10 chapters: `python -m src.ingestion.pipeline --input ../frontend/docs/chapters --rebuild`
 
 ### Performance Optimization
 
 - [ ] T081 [P] [frontend-designer] Optimize images in frontend/static/img/ (compress, resize, use WebP format where possible)
-- [ ] T082 [P] [docusaurus-developer] Enable code splitting in docusaurus.config.js (lazy load chatbot widget)
-- [ ] T083 [backend-engineer] Add caching headers to FastAPI responses (Cache-Control for health endpoint)
+- [x] T082 [P] [docusaurus-developer] Enable code splitting in docusaurus.config.js (lazy load chatbot widget)
+- [x] T083 [backend-engineer] Add caching headers to FastAPI responses (Cache-Control for health endpoint)
 
 ### Security Hardening
 
-- [ ] T084 [P] [backend-engineer] Add rate limiting to /api/chat endpoint (max 60 requests/minute per session_id, 429 response on exceed)
-- [ ] T085 [P] [backend-engineer] Add input validation to ChatRequest (sanitize message field, prevent injection attacks)
+- [x] T084 [P] [backend-engineer] Add rate limiting to /api/chat endpoint (max 60 requests/minute per session_id, 429 response on exceed)
+- [x] T085 [P] [backend-engineer] Add input validation to ChatRequest (sanitize message field, prevent injection attacks)
 
 ### Final Validation
 

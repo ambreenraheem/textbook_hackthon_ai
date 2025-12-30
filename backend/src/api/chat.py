@@ -94,7 +94,8 @@ class RateLimiter:
 
 
 # Global rate limiter instance
-rate_limiter = RateLimiter(max_requests=10, window_seconds=60)
+# T084: 60 requests per minute per session_id
+rate_limiter = RateLimiter(max_requests=60, window_seconds=60)
 
 
 # ==================== Conversation Helpers ====================
@@ -251,7 +252,7 @@ async def chat(
       - done event: Completion with conversation/message IDs
 
     Rate Limiting:
-    - 10 requests per minute per session
+    - 60 requests per minute per session
 
     Errors:
     - 429: Rate limit exceeded
