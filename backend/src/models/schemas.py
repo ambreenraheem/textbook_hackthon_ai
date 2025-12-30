@@ -17,6 +17,7 @@ class ChatRequest(BaseModel):
     Request schema for POST /api/chat endpoint.
 
     Represents a user's question submitted to the chatbot.
+    Includes input sanitization to prevent injection attacks.
     """
     session_id: UUID = Field(
         ...,
@@ -37,6 +38,68 @@ class ChatRequest(BaseModel):
         None,
         description="Existing conversation ID for follow-up questions (null for new conversation)"
     )
+
+    @field_validator('message')
+    @classmethod
+    def sanitize_message(cls, v: str) -> str:
+        """
+        Sanitize user message to prevent injection attacks.
+
+        - Strips leading/trailing whitespace
+        - Removes null bytes
+        - Removes control characters (except newlines and tabs)
+        - Validates message is not empty after sanitization
+
+        Args:
+            v: Raw user message
+
+        Returns:
+            Sanitized message
+
+        Raises:
+            ValueError: If message is empty after sanitization
+        """
+        # Strip whitespace
+        v = v.strip()
+
+        # Remove null bytes
+        v = v.replace('\x00', '')
+
+        # Remove control characters except \n (newline) and \t (tab)
+        v = ''.join(char for char in v if char == '\n' or char == '\t' or ord(char) >= 32)
+
+        # Validate not empty
+        if not v:
+            raise ValueError('Message cannot be empty after sanitization')
+
+        return v
+
+    @field_validator('selected_text')
+    @classmethod
+    def sanitize_selected_text(cls, v: Optional[str]) -> Optional[str]:
+        """
+        Sanitize selected text to prevent injection attacks.
+
+        Args:
+            v: Raw selected text
+
+        Returns:
+            Sanitized selected text or None
+        """
+        if v is None:
+            return None
+
+        # Strip whitespace
+        v = v.strip()
+
+        # Remove null bytes
+        v = v.replace('\x00', '')
+
+        # Remove control characters except \n and \t
+        v = ''.join(char for char in v if char == '\n' or char == '\t' or ord(char) >= 32)
+
+        # Return None if empty after sanitization
+        return v if v else None
 
     model_config = {
         "json_schema_extra": {

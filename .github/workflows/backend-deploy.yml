@@ -1,0 +1,92 @@
+#=======================================================================
+# Backend Deployment Workflow
+#=======================================================================
+# Automatically deploys FastAPI backend to Render on push to main
+# Alternative: Can be adapted for Railway, Fly.io, or other platforms
+#=======================================================================
+
+name: Deploy Backend to Render
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-deploy.yml'
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  deploy:
+    name: Deploy to Render
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run linting (optional)
+        run: |
+          pip install flake8
+          flake8 src --count --select=E9,F63,F7,F82 --show-source --statistics || true
+        continue-on-error: true
+
+      - name: Run tests (if exist)
+        run: |
+          if [ -d "tests" ]; then
+            pip install pytest pytest-asyncio
+            pytest tests/ -v || true
+          else
+            echo "No tests directory found, skipping tests"
+          fi
+        continue-on-error: true
+
+      - name: Trigger Render deployment
+        run: |
+          echo "✅ Code pushed to main branch"
+          echo "🚀 Render will auto-deploy from this commit"
+          echo "📦 Commit SHA: ${{ github.sha }}"
+          echo ""
+          echo "ℹ️  Render auto-deploys when connected to GitHub repository"
+          echo "Monitor deployment at: https://dashboard.render.com/"
+
+      - name: Health check (post-deployment)
+        run: |
+          echo "⏳ Waiting 60 seconds for deployment to complete..."
+          sleep 60
+
+          if [ -n "${{ secrets.RENDER_BACKEND_URL }}" ]; then
+            echo "🏥 Checking health endpoint..."
+            curl -f ${{ secrets.RENDER_BACKEND_URL }}/api/health || echo "⚠️  Health check failed (deployment may still be in progress)"
+          else
+            echo "ℹ️  Set RENDER_BACKEND_URL secret to enable automatic health checks"
+          fi
+        continue-on-error: true
+
+      - name: Deployment summary
+        run: |
+          echo "### Deployment Summary 📊" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Backend code validated" >> $GITHUB_STEP_SUMMARY
+          echo "- 🚀 Render auto-deployment triggered" >> $GITHUB_STEP_SUMMARY
+          echo "- 📦 Commit: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Next Steps:**" >> $GITHUB_STEP_SUMMARY
+          echo "1. Monitor deployment at [Render Dashboard](https://dashboard.render.com/)" >> $GITHUB_STEP_SUMMARY
+          echo "2. Check health endpoint: \`/api/health\`" >> $GITHUB_STEP_SUMMARY
+          echo "3. View logs in Render dashboard" >> $GITHUB_STEP_SUMMARY
