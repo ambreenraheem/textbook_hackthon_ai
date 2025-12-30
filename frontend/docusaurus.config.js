@@ -12,11 +12,13 @@ const config = {
   favicon: 'img/favicon.ico',
 
   // Set the production url of your site here
-  url: 'https://ambreenraheem.github.io',
+  // Will be your Vercel URL: https://your-project.vercel.app
+  url: 'https://textbook-hackthon-ai.vercel.app',
   // Set the /<baseUrl>/ pathname under which your site is served
-  baseUrl: '/textbook_hackthon_ai/',
+  // For Vercel: use '/' (root path)
+  baseUrl: '/',
 
-  // GitHub pages deployment config
+  // GitHub pages deployment config (not used with Vercel)
   organizationName: 'ambreenraheem',
   projectName: 'textbook_hackthon_ai',
 
