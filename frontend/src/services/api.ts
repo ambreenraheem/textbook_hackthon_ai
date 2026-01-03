@@ -30,7 +30,7 @@ export const getApiUrl = (): string => {
   }
 
   // Default to localhost for development
-  return process.env.REACT_APP_API_URL || 'http://localhost:8000';
+  return 'http://localhost:8000';
 };
 
 /**
